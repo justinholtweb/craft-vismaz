@@ -1,0 +1,50 @@
+{% extends "_layouts/cp" %}
+
+{% set title = 'Log entry'|t('vismaz') ~ ' #' ~ entry.id %}
+{% set selectedSubnavItem = 'log' %}
+{% set crumbs = [{ label: 'Log'|t('vismaz'), url: url('vismaz/log') }] %}
+
+{% block content %}
+    <div class="meta read-only">
+        {% for label, value in {
+            ('When'|t('vismaz')): entry.dateCreated,
+            ('Action'|t('vismaz')): entry.action,
+            ('Level'|t('vismaz')): entry.level,
+            ('Method'|t('vismaz')): entry.method ?: '—',
+            ('Status'|t('vismaz')): entry.statusCode ?: '—',
+            ('Duration'|t('vismaz')): entry.durationMs ? entry.durationMs ~ ' ms' : '—'
+        } %}
+            <div class="data">
+                <div class="heading">{{ label }}</div>
+                <div class="value">{{ value }}</div>
+            </div>
+        {% endfor %}
+
+        {% if entry.url %}
+            <div class="data">
+                <div class="heading">{{ 'URL'|t('vismaz') }}</div>
+                <div class="value"><code>{{ entry.url }}</code></div>
+            </div>
+        {% endif %}
+
+        {% if entry.documentId %}
+            <div class="data">
+                <div class="heading">{{ 'Document'|t('vismaz') }}</div>
+                <div class="value"><a href="{{ url('vismaz/documents/' ~ entry.documentId) }}">#{{ entry.documentId }}</a></div>
+            </div>
+        {% endif %}
+    </div>
+
+    {% if entry.message %}
+        <blockquote class="note {{ entry.level == 'error' ? 'error' : (entry.level == 'warning' ? 'warning' : '') }}" style="margin-top:16px;">
+            <p>{{ entry.message }}</p>
+        </blockquote>
+    {% endif %}
+
+    {% for label, body in { ('Request'|t('vismaz')): entry.requestBody, ('Response'|t('vismaz')): entry.responseBody } %}
+        {% if body %}
+            <h2 style="margin-top:24px;">{{ label }}</h2>
+            <pre style="max-height:400px;overflow:auto;background:#f7f7f9;padding:10px;border-radius:4px;"><code>{{ body }}</code></pre>
+        {% endif %}
+    {% endfor %}
+{% endblock %}

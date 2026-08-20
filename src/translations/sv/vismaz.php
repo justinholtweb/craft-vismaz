@@ -1,0 +1,57 @@
+<?php
+
+/**
+ * Vismaz — svenska.
+ *
+ * The plugin's whole market is Sweden, so the CP is translated rather than left in English. The
+ * accounting vocabulary here is the vocabulary the merchant's accountant already uses — "verifikat",
+ * "moms", "öresavrundning" — because translating those into approximations helps nobody.
+ */
+return [
+    'Vismaz' => 'Vismaz',
+    'Documents' => 'Verifikat',
+    'Document' => 'Verifikat',
+    'Log' => 'Logg',
+    'OSS report' => 'OSS-rapport',
+    'Settings' => 'Inställningar',
+    'Shipping' => 'Frakt',
+    'Discount' => 'Rabatt',
+    'Sales' => 'Försäljning',
+    'Output VAT' => 'Utgående moms',
+    'Settlement' => 'Inbetalning',
+    'Payment fees' => 'Betalningsavgifter',
+    'Guest' => 'Gäst',
+    'Webshop customers' => 'Webbshopskunder',
+    'Outstanding at period end' => 'Utestående vid periodens slut',
+    'Öresavrundning' => 'Öresavrundning',
+    'Rounding to whole kronor.' => 'Avrundning till hela kronor.',
+    'Reverse charge' => 'Omvänd betalningsskyldighet',
+    'Export, outside EU' => 'Export, utanför EU',
+    'Exempt' => 'Momsfri',
+    'Domestic {rate}%' => 'Inrikes {rate} %',
+    'OSS ({country} {rate}%)' => 'OSS ({country} {rate} %)',
+    'Sent to Visma.' => 'Skickat till Visma.',
+    'Mismatched' => 'Avvikande',
+    'Visma booked {theirs} but {ours} was sent — check the document before relying on these books.' => 'Visma bokförde {theirs} men {ours} skickades — kontrollera verifikatet innan du litar på bokföringen.',
+    'Already in Visma as {number}.' => 'Finns redan i Visma som {number}.',
+    'Disconnected from Visma.' => 'Frånkopplad från Visma.',
+    'Connected to {company}.' => 'Ansluten till {company}.',
+    'Vismaz is not connected to Visma.' => 'Vismaz är inte anslutet till Visma.',
+    'Order {reference}' => 'Order {reference}',
+    'Refund for order {reference}' => 'Kreditering av order {reference}',
+    'Refund, order {reference}' => 'Återbetalning, order {reference}',
+    'Webshop sales {from} – {to} ({count} orders)' => 'Webbförsäljning {from} – {to} ({count} order)',
+    'Delivered inside {country}.' => 'Levererad inom {country}.',
+    'Delivered outside the EU.' => 'Levererad utanför EU.',
+    'EU business customer with a VAT number.' => 'EU-företagskund med momsregistreringsnummer.',
+    'VIES could not be reached, so the sale stays taxed.' => 'VIES kunde inte nås, så försäljningen förblir momsbelagd.',
+    'VAT number {number} was rejected by VIES, so the sale stays taxed.' => 'Momsnumret {number} godkändes inte av VIES, så försäljningen förblir momsbelagd.',
+    'EU consumer sale under OSS; {rate}% {country} VAT applies.' => 'EU-konsumentförsäljning enligt OSS; {rate} % moms i {country}.',
+    'EU sale with {rate}% VAT charged.' => 'EU-försäljning med {rate} % moms.',
+    'View Visma documents' => 'Visa Visma-verifikat',
+    'Send orders to Visma' => 'Skicka order till Visma',
+    'View the connection log' => 'Visa anslutningsloggen',
+    'Export SIE files' => 'Exportera SIE-filer',
+    'Sending order to Visma' => 'Skickar order till Visma',
+    '“{value}” is not a BAS account number.' => '”{value}” är inte ett BAS-kontonummer.',
+];

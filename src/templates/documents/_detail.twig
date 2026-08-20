@@ -1,0 +1,98 @@
+{% extends "_layouts/cp" %}
+
+{% set title = 'Document'|t('vismaz') ~ ' #' ~ document.id %}
+{% set selectedSubnavItem = 'documents' %}
+{% set crumbs = [{ label: 'Documents'|t('vismaz'), url: url('vismaz/documents') }] %}
+
+{% block content %}
+    <div class="meta read-only">
+        {% for label, value in {
+            ('Type'|t('vismaz')): document.type,
+            ('Status'|t('vismaz')): document.status,
+            ('Source key'|t('vismaz')): document.sourceKey,
+            ('Visma ID'|t('vismaz')): document.vismaId ?: '—',
+            ('Visma number'|t('vismaz')): document.vismaNumber ?: '—',
+            ('Date'|t('vismaz')): document.documentDate ? document.documentDate|date('Y-m-d') : '—',
+            ('Tax treatment'|t('vismaz')): document.taxKind ?: '—',
+            ('Attempts'|t('vismaz')): document.attempts,
+            ('Sent'|t('vismaz')): document.dateSent ?: '—'
+        } %}
+            <div class="data">
+                <div class="heading">{{ label }}</div>
+                <div class="value">{{ value }}</div>
+            </div>
+        {% endfor %}
+
+        <div class="data">
+            <div class="heading">{{ 'Totals'|t('vismaz') }}</div>
+            <div class="value">
+                {{ craft.vismaz.money(document.netTotal, document.currency ?: 'SEK') }}
+                + {{ craft.vismaz.money(document.vatTotal, document.currency ?: 'SEK') }}
+                = <strong>{{ craft.vismaz.money(document.grossTotal, document.currency ?: 'SEK') }}</strong>
+            </div>
+        </div>
+    </div>
+
+    {% if document.lastError %}
+        <blockquote class="note {{ document.status == 'mismatched' ? 'warning' : 'error' }}" style="margin-top:16px;">
+            <p>{{ document.lastError }}</p>
+            {% if document.status == 'mismatched' %}
+                <p class="light">{{ 'This document is in Visma. Retrying would post it a second time, so it is not offered — reconcile it by hand.'|t('vismaz') }}</p>
+            {% endif %}
+        </blockquote>
+    {% endif %}
+
+    {% if orderIds|length %}
+        <h2 style="margin-top:24px;">{{ 'Orders'|t('vismaz') }} ({{ orderIds|length }})</h2>
+        <p>
+            {% for orderId in orderIds|slice(0, 100) %}
+                <a href="{{ cpUrl('commerce/orders/' ~ orderId) }}">#{{ orderId }}</a>{{ not loop.last ? ', ' }}
+            {% endfor %}
+            {% if orderIds|length > 100 %}<span class="light"> … {{ orderIds|length - 100 }} {{ 'more'|t('vismaz') }}</span>{% endif %}
+        </p>
+    {% endif %}
+
+    {% if document.status == 'failed' %}
+        <form method="post" accept-charset="UTF-8" style="margin-top:16px;">
+            {{ csrfInput() }}
+            {{ actionInput('vismaz/documents/retry') }}
+            {{ hiddenInput('documentId', document.id) }}
+            <button type="submit" class="btn submit">{{ 'Retry'|t('vismaz') }}</button>
+            <span class="light" style="margin-left:8px;">{{ 'Rebuilt from the order as it is now, not replayed from the stored payload.'|t('vismaz') }}</span>
+        </form>
+    {% endif %}
+
+    {% if document.payload %}
+        <h2 style="margin-top:24px;">{{ 'Payload sent'|t('vismaz') }}</h2>
+        <pre style="max-height:400px;overflow:auto;background:#f7f7f9;padding:10px;border-radius:4px;"><code>{{ document.payload }}</code></pre>
+    {% endif %}
+
+    {% if document.response %}
+        <h2 style="margin-top:24px;">{{ 'Response'|t('vismaz') }}</h2>
+        <pre style="max-height:400px;overflow:auto;background:#f7f7f9;padding:10px;border-radius:4px;"><code>{{ document.response }}</code></pre>
+    {% endif %}
+
+    {% if logEntries|length %}
+        <h2 style="margin-top:24px;">{{ 'Log'|t('vismaz') }}</h2>
+        <table class="data fullwidth">
+            <thead>
+                <tr>
+                    <th>{{ 'When'|t('vismaz') }}</th>
+                    <th>{{ 'Action'|t('vismaz') }}</th>
+                    <th>{{ 'Status'|t('vismaz') }}</th>
+                    <th>{{ 'Message'|t('vismaz') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in logEntries %}
+                    <tr>
+                        <td><a href="{{ url('vismaz/log/' ~ entry.id) }}">{{ entry.dateCreated }}</a></td>
+                        <td>{{ entry.action }}</td>
+                        <td>{{ entry.statusCode ?: '—' }}</td>
+                        <td class="light">{{ entry.message ?: '—' }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+{% endblock %}

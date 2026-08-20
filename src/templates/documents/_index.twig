@@ -1,0 +1,119 @@
+{% extends "_layouts/cp" %}
+
+{% set title = 'Documents'|t('vismaz') %}
+{% set selectedSubnavItem = 'documents' %}
+
+{% block content %}
+    {% if not connected %}
+        <blockquote class="note warning">
+            <p>{{ 'Vismaz is not connected to Visma.'|t('vismaz') }}
+                <a href="{{ url('settings/plugins/vismaz') }}">{{ 'Connect'|t('vismaz') }}</a>
+            </p>
+        </blockquote>
+    {% endif %}
+
+    <div class="flex" style="margin-bottom:16px;gap:8px;">
+        {% for key, label in { '': 'All'|t('vismaz'), pending: 'Pending'|t('vismaz'), sent: 'Sent'|t('vismaz'), mismatched: 'Mismatched'|t('vismaz'), failed: 'Failed'|t('vismaz') } %}
+            <a class="btn{{ status == key or (status is empty and key is empty) ? ' active' : '' }}"
+               href="{{ url('vismaz/documents', key ? { status: key } : {}) }}">{{ label }}</a>
+        {% endfor %}
+    </div>
+
+    {% if documents|length %}
+        <table class="data fullwidth">
+            <thead>
+                <tr>
+                    <th>{{ 'Date'|t('vismaz') }}</th>
+                    <th>{{ 'Type'|t('vismaz') }}</th>
+                    <th>{{ 'Source'|t('vismaz') }}</th>
+                    <th>{{ 'Status'|t('vismaz') }}</th>
+                    <th>{{ 'Visma no.'|t('vismaz') }}</th>
+                    <th>{{ 'Orders'|t('vismaz') }}</th>
+                    <th class="right">{{ 'Net'|t('vismaz') }}</th>
+                    <th class="right">{{ 'VAT'|t('vismaz') }}</th>
+                    <th class="right">{{ 'Gross'|t('vismaz') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for document in documents %}
+                    <tr>
+                        <td><a href="{{ url('vismaz/documents/' ~ document.id) }}">{{ document.documentDate ? document.documentDate|date('Y-m-d') : '—' }}</a></td>
+                        <td>{{ document.type }}</td>
+                        <td><code class="light">{{ document.sourceKey }}</code></td>
+                        <td>
+                            <span class="status {{ document.status == 'sent' ? 'green' : (document.status == 'failed' ? 'red' : 'orange') }}"></span>
+                            {{ document.status }}
+                            {%- if document.attempts > 1 %} <span class="light">×{{ document.attempts }}</span>{% endif %}
+                        </td>
+                        <td>{{ document.vismaNumber ?: '—' }}</td>
+                        <td>{{ document.orderCount }}</td>
+                        <td class="right">{{ craft.vismaz.money(document.netTotal, document.currency ?: 'SEK') }}</td>
+                        <td class="right">{{ craft.vismaz.money(document.vatTotal, document.currency ?: 'SEK') }}</td>
+                        <td class="right">{{ craft.vismaz.money(document.grossTotal, document.currency ?: 'SEK') }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if pages > 1 %}
+            <div class="flex" style="margin-top:16px;gap:8px;">
+                {% if page > 1 %}
+                    <a class="btn" href="{{ url('vismaz/documents', { page: page - 1, status: status, type: type }) }}">{{ '← Previous'|t('vismaz') }}</a>
+                {% endif %}
+                <span class="light" style="align-self:center;">{{ 'Page {page} of {pages}'|t('vismaz', { page: page, pages: pages }) }}</span>
+                {% if page < pages %}
+                    <a class="btn" href="{{ url('vismaz/documents', { page: page + 1, status: status, type: type }) }}">{{ 'Next →'|t('vismaz') }}</a>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% else %}
+        <p class="light">{{ 'Nothing has been sent to Visma yet.'|t('vismaz') }}</p>
+    {% endif %}
+
+    {% if isPro %}
+        <hr>
+        <h2>{{ 'Run a period'|t('vismaz') }}</h2>
+
+        <form method="post" accept-charset="UTF-8">
+            {{ csrfInput() }}
+            {{ actionInput('vismaz/documents/push-period') }}
+            <div class="flex" style="gap:8px;align-items:flex-end;">
+                <div class="field">
+                    <div class="heading"><label>{{ 'From'|t('vismaz') }}</label></div>
+                    <div class="input"><input type="date" name="from" class="text" required></div>
+                </div>
+                <div class="field">
+                    <div class="heading"><label>{{ 'To'|t('vismaz') }}</label></div>
+                    <div class="input"><input type="date" name="to" class="text"></div>
+                </div>
+                <button type="submit" class="btn submit">{{ 'Send summary voucher'|t('vismaz') }}</button>
+            </div>
+        </form>
+
+        <h2 style="margin-top:24px;">{{ 'SIE 4 export'|t('vismaz') }}</h2>
+        <div class="readable">
+            <p class="light">{{ 'For merchants on desktop Visma Administration, which has no API. Same journal, written to a file the accountant imports.'|t('vismaz') }}</p>
+        </div>
+
+        <form method="post" accept-charset="UTF-8">
+            {{ csrfInput() }}
+            {{ actionInput('vismaz/sie/export') }}
+            <div class="flex" style="gap:8px;align-items:flex-end;">
+                <div class="field">
+                    <div class="heading"><label>{{ 'From'|t('vismaz') }}</label></div>
+                    <div class="input"><input type="date" name="from" class="text" required></div>
+                </div>
+                <div class="field">
+                    <div class="heading"><label>{{ 'To'|t('vismaz') }}</label></div>
+                    <div class="input"><input type="date" name="to" class="text" required></div>
+                </div>
+                <div class="field">
+                    <div class="input">
+                        <label><input type="checkbox" name="includeSynced" value="1"> {{ 'Include orders already in Visma'|t('vismaz') }}</label>
+                    </div>
+                </div>
+                <button type="submit" class="btn">{{ 'Download .se file'|t('vismaz') }}</button>
+            </div>
+        </form>
+    {% endif %}
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "_layouts/cp" %}
+
+{% set title = 'Log'|t('vismaz') %}
+{% set selectedSubnavItem = 'log' %}
+
+{% block content %}
+    <div class="flex" style="margin-bottom:16px;gap:8px;">
+        {% for key, label in { '': 'All'|t('vismaz'), info: 'Info'|t('vismaz'), warning: 'Warnings'|t('vismaz'), error: 'Errors'|t('vismaz') } %}
+            <a class="btn{{ level == key or (level is empty and key is empty) ? ' active' : '' }}"
+               href="{{ url('vismaz/log', key ? { level: key } : {}) }}">{{ label }}</a>
+        {% endfor %}
+
+        {% if currentUser.admin %}
+            <form method="post" accept-charset="UTF-8" style="margin-left:auto;">
+                {{ csrfInput() }}
+                {{ actionInput('vismaz/log/clear') }}
+                <button type="submit" class="btn">{{ 'Clear log'|t('vismaz') }}</button>
+            </form>
+        {% endif %}
+    </div>
+
+    {% if entries|length %}
+        <table class="data fullwidth">
+            <thead>
+                <tr>
+                    <th>{{ 'When'|t('vismaz') }}</th>
+                    <th>{{ 'Action'|t('vismaz') }}</th>
+                    <th>{{ 'Method'|t('vismaz') }}</th>
+                    <th>{{ 'Status'|t('vismaz') }}</th>
+                    <th>{{ 'Time'|t('vismaz') }}</th>
+                    <th>{{ 'Message'|t('vismaz') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                    <tr>
+                        <td><a href="{{ url('vismaz/log/' ~ entry.id) }}">{{ entry.dateCreated }}</a></td>
+                        <td>
+                            <span class="status {{ entry.level == 'error' ? 'red' : (entry.level == 'warning' ? 'orange' : 'green') }}"></span>
+                            {{ entry.action }}
+                        </td>
+                        <td class="light">{{ entry.method ?: '—' }}</td>
+                        <td>{{ entry.statusCode ?: '—' }}</td>
+                        <td class="light">{{ entry.durationMs ? entry.durationMs ~ ' ms' : '—' }}</td>
+                        <td class="light">{{ entry.message|slice(0, 120) ?: '—' }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if pages > 1 %}
+            <div class="flex" style="margin-top:16px;gap:8px;">
+                {% if page > 1 %}
+                    <a class="btn" href="{{ url('vismaz/log', { page: page - 1, level: level }) }}">{{ '← Previous'|t('vismaz') }}</a>
+                {% endif %}
+                <span class="light" style="align-self:center;">{{ 'Page {page} of {pages}'|t('vismaz', { page: page, pages: pages }) }}</span>
+                {% if page < pages %}
+                    <a class="btn" href="{{ url('vismaz/log', { page: page + 1, level: level }) }}">{{ 'Next →'|t('vismaz') }}</a>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% else %}
+        <p class="light">{{ 'The log is empty.'|t('vismaz') }}</p>
+    {% endif %}
+{% endblock %}

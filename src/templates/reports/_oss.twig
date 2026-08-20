@@ -1,0 +1,66 @@
+{% extends "_layouts/cp" %}
+
+{% set title = 'OSS report'|t('vismaz') %}
+{% set selectedSubnavItem = 'oss' %}
+
+{% block content %}
+    <div class="readable">
+        <p>
+            {{ 'One Stop Shop sales, broken down by destination country and VAT rate — the shape the quarterly declaration asks for. Read from the same tax decisions Vismaz books with, so this report and the ledger cannot disagree.'|t('vismaz') }}
+        </p>
+    </div>
+
+    {% if not ossEnabled %}
+        <blockquote class="note warning">
+            <p>{{ 'OSS is switched off in settings, so nothing is being taxed at destination rates.'|t('vismaz') }}
+                <a href="{{ url('settings/plugins/vismaz') }}">{{ 'Settings'|t('vismaz') }}</a>
+            </p>
+        </blockquote>
+    {% endif %}
+
+    <form method="get" class="flex" style="gap:8px;align-items:flex-end;margin:16px 0;">
+        <div class="field">
+            <div class="heading"><label>{{ 'From'|t('vismaz') }}</label></div>
+            <div class="input"><input type="date" name="from" class="text" value="{{ from|date('Y-m-d') }}"></div>
+        </div>
+        <div class="field">
+            <div class="heading"><label>{{ 'To'|t('vismaz') }}</label></div>
+            <div class="input"><input type="date" name="to" class="text" value="{{ to|date('Y-m-d') }}"></div>
+        </div>
+        <button type="submit" class="btn submit">{{ 'Show'|t('vismaz') }}</button>
+    </form>
+
+    {% if rows|length %}
+        <table class="data fullwidth">
+            <thead>
+                <tr>
+                    <th>{{ 'Country'|t('vismaz') }}</th>
+                    <th>{{ 'Rate'|t('vismaz') }}</th>
+                    <th>{{ 'Orders'|t('vismaz') }}</th>
+                    <th class="right">{{ 'Net'|t('vismaz') }}</th>
+                    <th class="right">{{ 'VAT'|t('vismaz') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td><strong>{{ row.country }}</strong></td>
+                        <td>{{ row.rate }} %</td>
+                        <td>{{ row.orderCount }}</td>
+                        <td class="right">{{ craft.vismaz.money(row.net) }}</td>
+                        <td class="right">{{ craft.vismaz.money(row.vat) }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th colspan="3">{{ 'Total'|t('vismaz') }}</th>
+                    <th class="right">{{ craft.vismaz.money(grandNet) }}</th>
+                    <th class="right">{{ craft.vismaz.money(grandVat) }}</th>
+                </tr>
+            </tfoot>
+        </table>
+    {% else %}
+        <p class="light">{{ 'No OSS sales in that period.'|t('vismaz') }}</p>
+    {% endif %}
+{% endblock %}

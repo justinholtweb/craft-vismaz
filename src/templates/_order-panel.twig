@@ -1,0 +1,135 @@
+{# Vismaz's panel on Commerce's own order edit screen. #}
+<div class="vismaz-order-panel" style="margin-top:24px;">
+    <h3 style="margin-bottom:8px;">{{ 'Vismaz'|t('vismaz') }}</h3>
+
+    {% if not connected %}
+        <p class="light">{{ 'Not connected to Visma.'|t('vismaz') }}</p>
+    {% endif %}
+
+    {% if treatment %}
+        <p>
+            <strong>{{ treatment.getLabel() }}</strong>
+            {% if treatment.vatNumber %}
+                <span class="light">— {{ treatment.vatNumber }}{% if treatment.vatNumberValidated %} ({{ 'VIES checked'|t('vismaz') }}){% endif %}</span>
+            {% endif %}
+        </p>
+        <p class="light" style="margin-top:2px;">{{ treatment.reason }}</p>
+        <p class="light" style="margin-top:2px;">
+            {{ 'Books to'|t('vismaz') }} <code>{{ treatment.salesAccount }}</code>
+            {%- if treatment.vatAccount %} / <code>{{ treatment.vatAccount }}</code>{% endif %}
+        </p>
+    {% endif %}
+
+    {% if documents|length %}
+        <table class="data fullwidth" style="margin-top:12px;">
+            <thead>
+                <tr>
+                    <th>{{ 'Type'|t('vismaz') }}</th>
+                    <th>{{ 'Status'|t('vismaz') }}</th>
+                    <th>{{ 'Number'|t('vismaz') }}</th>
+                    <th>{{ 'Total'|t('vismaz') }}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for document in documents %}
+                    <tr>
+                        <td>{{ document.type|t('vismaz') }}</td>
+                        <td>
+                            <span class="status {{ document.status == 'sent' ? 'green' : (document.status == 'failed' ? 'red' : 'orange') }}"></span>
+                            {{ document.status }}
+                        </td>
+                        <td>{{ document.vismaNumber ?: '—' }}</td>
+                        <td>{{ craft.vismaz.money(document.grossTotal, document.currency ?: 'SEK') }}</td>
+                        <td class="thin">
+                            <a href="{{ url('vismaz/documents/' ~ document.id) }}">{{ 'Details'|t('vismaz') }}</a>
+                        </td>
+                    </tr>
+                    {% if document.lastError %}
+                        <tr>
+                            <td colspan="5" class="light error">{{ document.lastError }}</td>
+                        </tr>
+                    {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="light" style="margin-top:8px;">{{ 'Not yet sent to Visma.'|t('vismaz') }}</p>
+    {% endif %}
+
+    <div class="buttons" style="margin-top:12px;">
+        <button type="button" class="btn" id="vismaz-preview-{{ order.id }}">{{ 'Preview'|t('vismaz') }}</button>
+
+        {% if canPush and connected %}
+            <button type="button" class="btn submit" id="vismaz-push-{{ order.id }}">{{ 'Send to Visma'|t('vismaz') }}</button>
+
+            {% if isPro %}
+                <button type="button" class="btn" id="vismaz-refund-{{ order.id }}">{{ 'Credit refunds'|t('vismaz') }}</button>
+            {% endif %}
+        {% endif %}
+
+        <span class="spinner hidden" id="vismaz-spinner-{{ order.id }}"></span>
+    </div>
+
+    <div id="vismaz-preview-out-{{ order.id }}" class="hidden" style="margin-top:12px;">
+        <p id="vismaz-preview-summary-{{ order.id }}" class="light"></p>
+        <pre style="max-height:320px;overflow:auto;background:#f7f7f9;padding:10px;border-radius:4px;"><code id="vismaz-preview-json-{{ order.id }}"></code></pre>
+    </div>
+</div>
+
+{% js %}
+(function() {
+    var orderId = {{ order.id }};
+    var spinner = document.getElementById('vismaz-spinner-' + orderId);
+    var out = document.getElementById('vismaz-preview-out-' + orderId);
+    var summary = document.getElementById('vismaz-preview-summary-' + orderId);
+    var json = document.getElementById('vismaz-preview-json-' + orderId);
+
+    function busy(on) {
+        spinner.classList.toggle('hidden', !on);
+    }
+
+    function bind(id, handler) {
+        var el = document.getElementById(id);
+        if (el) { el.addEventListener('click', handler); }
+    }
+
+    bind('vismaz-preview-' + orderId, function() {
+        busy(true);
+
+        // The preview calls the same builder the push calls, with remote lookups off — so this
+        // creates nothing in Visma and shows exactly what would be sent.
+        Craft.sendActionRequest('POST', 'vismaz/documents/preview', { data: { orderId: orderId } })
+            .then(function(response) {
+                var d = response.data;
+                if (!d.success) { Craft.cp.displayError(d.message); return; }
+                summary.textContent = d.treatment + ' — ' + d.reason
+                    + '  |  net ' + d.net + '  vat ' + d.vat + '  gross ' + d.gross;
+                json.textContent = d.payload;
+                out.classList.remove('hidden');
+            })
+            .catch(function(error) {
+                Craft.cp.displayError((error.response && error.response.data && error.response.data.message) || 'Preview failed.');
+            })
+            .finally(function() { busy(false); });
+    });
+
+    function push(mode) {
+        busy(true);
+
+        Craft.sendActionRequest('POST', 'vismaz/documents/push', { data: { orderId: orderId, mode: mode } })
+            .then(function(response) {
+                var d = response.data;
+                d.success ? Craft.cp.displayNotice(d.message) : Craft.cp.displayError(d.message);
+                if (d.success) { setTimeout(function() { window.location.reload(); }, 800); }
+            })
+            .catch(function(error) {
+                Craft.cp.displayError((error.response && error.response.data && error.response.data.message) || 'Send failed.');
+            })
+            .finally(function() { busy(false); });
+    }
+
+    bind('vismaz-push-' + orderId, function() { push('invoice'); });
+    bind('vismaz-refund-' + orderId, function() { push('refund'); });
+})();
+{% endjs %}
