@@ -1,4 +1,7 @@
 /vendor
 /composer.lock
 .DS_Store
-*.html
+
+# Scratch HTML captured while smoke-testing CP screens. Scoped to the repo root so it cannot
+# swallow promos/slides.html, which is the source of the Plugin Store images.
+/*.html

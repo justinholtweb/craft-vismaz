@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Interior rules only, as hairlines. The watermark is scaled ~12x, so a stroke-width that
+       looks reasonable in the icon comes out ~21px thick here and reads as a row of pills behind
+       the type. Keep it thin and let it whisper. -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="0.55" stroke-linecap="butt">
+    <path d="M24 40h34M24 52h26M24 64h30"/>
+    <path d="M66 40h10M66 52h10"/>
+    <path d="M24 74h52"/>
+    <path d="M62 81h14"/>
+  </g>
+</svg>

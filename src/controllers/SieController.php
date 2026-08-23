@@ -23,10 +23,6 @@ class SieController extends Controller
 
         $this->requirePermission('vismaz-exportSie');
 
-        if (!Plugin::getInstance()->isPro()) {
-            throw new ForbiddenHttpException('SIE export needs Vismaz Pro.');
-        }
-
         return true;
     }
 

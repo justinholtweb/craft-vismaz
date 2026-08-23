@@ -45,17 +45,9 @@ class Plugin extends BasePlugin
 {
     public const HANDLE = 'vismaz';
 
-    public const EDITION_LITE = 'lite';
-    public const EDITION_PRO = 'pro';
-
     public string $schemaVersion = '5.0.0';
     public bool $hasCpSettings = true;
     public bool $hasCpSection = true;
-
-    public static function editions(): array
-    {
-        return [self::EDITION_LITE, self::EDITION_PRO];
-    }
 
     public static function config(): array
     {
@@ -89,21 +81,13 @@ class Plugin extends BasePlugin
         }
 
         $this->_registerOrderEditPanel();
-
-        if ($this->isPro()) {
-            $this->_registerOrderCompletion();
-        }
+        $this->_registerOrderCompletion();
     }
 
     public static function commerceIsReady(): bool
     {
         return class_exists(\craft\commerce\Plugin::class)
             && Craft::$app->getPlugins()->isPluginEnabled('commerce');
-    }
-
-    public function isPro(): bool
-    {
-        return $this->is(self::EDITION_PRO, '>=');
     }
 
     public function getAuth(): Auth
@@ -179,7 +163,7 @@ class Plugin extends BasePlugin
             ];
         }
 
-        if ($this->isPro() && $user->checkPermission('vismaz-viewDocuments')) {
+        if ($user->checkPermission('vismaz-viewDocuments')) {
             $subNav['oss'] = [
                 'label' => Craft::t('vismaz', 'OSS report'),
                 'url' => 'vismaz/reports/oss',
@@ -295,7 +279,6 @@ class Plugin extends BasePlugin
                 'order' => $order,
                 'documents' => $this->getSync()->getDocumentsForOrder($order->id),
                 'treatment' => $treatment,
-                'isPro' => $this->isPro(),
                 'connected' => $this->getAuth()->isConnected(),
                 'canPush' => Craft::$app->getUser()->checkPermission('vismaz-pushDocuments'),
             ], View::TEMPLATE_MODE_CP);

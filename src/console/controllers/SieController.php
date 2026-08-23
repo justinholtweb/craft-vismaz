@@ -38,12 +38,6 @@ class SieController extends Controller
     {
         $plugin = Plugin::getInstance();
 
-        if (!$plugin->isPro()) {
-            $this->stderr("SIE export needs Vismaz Pro.\n", Console::FG_RED);
-
-            return ExitCode::CONFIG;
-        }
-
         $from = new DateTimeImmutable($this->from ?: 'first day of last month');
         $to = new DateTimeImmutable($this->to ?: 'last day of last month');
 

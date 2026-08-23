@@ -31,10 +31,6 @@ class ReportsController extends Controller
 
         $this->requirePermission('vismaz-viewDocuments');
 
-        if (!Plugin::getInstance()->isPro()) {
-            throw new ForbiddenHttpException('The OSS report needs Vismaz Pro.');
-        }
-
         return true;
     }
 

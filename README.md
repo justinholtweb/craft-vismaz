@@ -64,22 +64,27 @@ php craft plugin/install vismaz
 
 Sandbox and production keep separate connections, so switching between them loses neither.
 
-## Editions
+## What you get
 
-| | Lite | Pro |
-|---|---|---|
-| Connect to Visma (OAuth2), connection log | ✓ | ✓ |
-| Invoice mode, customer + article sync | ✓ | ✓ |
-| Swedish VAT mapping, öresavrundning | ✓ | ✓ |
-| Manual send + preview from the order screen | ✓ | ✓ |
-| Voucher mode (periodic summary journals) | | ✓ |
-| Reverse charge with VIES validation | | ✓ |
-| OSS destination VAT + per-country report | | ✓ |
-| Payment-method → ledger account mapping, processor fees | | ✓ |
-| Credit notes from refunds | | ✓ |
-| SIE 4 export | | ✓ |
-| Automatic send on order completion | | ✓ |
-| Console commands | | ✓ |
+Vismaz is **$79**, with a **$59/year** renewal for continued updates and support. There is no
+feature-gated tier: one price, everything switched on.
+
+| | |
+|---|---|
+| Connect to Visma (OAuth2), connection log | ✓ |
+| Invoice mode — one customer invoice per order | ✓ |
+| Voucher mode — periodic summary journals | ✓ |
+| Customer and article sync | ✓ |
+| Swedish VAT mapping and öresavrundning | ✓ |
+| Reverse charge with VIES validation | ✓ |
+| OSS destination VAT + per-country report | ✓ |
+| Payment-method → ledger account mapping, processor fees | ✓ |
+| Credit notes from refunds | ✓ |
+| SIE 4 export | ✓ |
+| Automatic send on order completion | ✓ |
+| Console commands | ✓ |
+
+The renewal is optional. The plugin keeps working when it lapses; you stop receiving updates.
 
 ## Console commands
 

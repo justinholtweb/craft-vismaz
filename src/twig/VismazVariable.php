@@ -19,11 +19,6 @@ class VismazVariable
         return Plugin::getInstance()->getAuth()->isConnected();
     }
 
-    public function isPro(): bool
-    {
-        return Plugin::getInstance()->isPro();
-    }
-
     public function connection(): ?array
     {
         $record = Plugin::getInstance()->getAuth()->getConnection();

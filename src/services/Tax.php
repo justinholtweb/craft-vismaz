@@ -70,7 +70,6 @@ class Tax extends Component
     {
         $plugin = Plugin::getInstance();
         $settings = $plugin->getSettings();
-        $isPro = $plugin->isPro();
 
         $rate = Bas::normaliseRate($chargedRate);
         $home = strtoupper($settings->homeCountry);
@@ -95,7 +94,7 @@ class Tax extends Component
         $vatNumber = $this->vatNumberFor($order);
 
         // 2. EU B2B — reverse charge.
-        if ($inEu && $isPro && $settings->reverseChargeEnabled && $vatNumber !== null) {
+        if ($inEu && $settings->reverseChargeEnabled && $vatNumber !== null) {
             $validated = true;
             $reason = Craft::t('vismaz', 'EU business customer with a VAT number.');
 
@@ -133,7 +132,7 @@ class Tax extends Component
         }
 
         // 3. EU B2C under OSS — destination VAT.
-        if ($inEu && $isPro && $settings->ossEnabled && $vatNumber === null) {
+        if ($inEu && $settings->ossEnabled && $vatNumber === null) {
             $treatment->kind = TaxTreatment::KIND_OSS;
             $treatment->salesAccount = $this->domesticAccount($rate);
             $treatment->vatAccount = $this->vatAccount($rate);

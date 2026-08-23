@@ -70,7 +70,7 @@ class SyncController extends Controller
 
         $this->stdout(sprintf("%d order(s) to sync.\n\n", count($orders)));
 
-        if ($plugin->getSettings()->documentMode === Settings::MODE_VOUCHER && $plugin->isPro()) {
+        if ($plugin->getSettings()->documentMode === Settings::MODE_VOUCHER) {
             $this->stdout("Voucher mode — run vismaz/sync/voucher instead.\n", Console::FG_YELLOW);
 
             return ExitCode::OK;
@@ -125,7 +125,7 @@ class SyncController extends Controller
     {
         $plugin = Plugin::getInstance();
 
-        if (!$this->guard(true)) {
+        if (!$this->guard()) {
             return ExitCode::CONFIG;
         }
 
@@ -209,18 +209,12 @@ class SyncController extends Controller
         return [$from->setTime(0, 0, 0), $to->setTime(0, 0, 0)];
     }
 
-    private function guard(bool $needsPro = false): bool
+    private function guard(): bool
     {
         $plugin = Plugin::getInstance();
 
         if (!Plugin::commerceIsReady()) {
             $this->stderr("Craft Commerce is not installed or is disabled.\n", Console::FG_RED);
-
-            return false;
-        }
-
-        if ($needsPro && !$plugin->isPro()) {
-            $this->stderr("That command needs Vismaz Pro.\n", Console::FG_RED);
 
             return false;
         }

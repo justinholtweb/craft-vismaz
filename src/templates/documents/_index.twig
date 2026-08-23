@@ -70,50 +70,48 @@
         <p class="light">{{ 'Nothing has been sent to Visma yet.'|t('vismaz') }}</p>
     {% endif %}
 
-    {% if isPro %}
-        <hr>
-        <h2>{{ 'Run a period'|t('vismaz') }}</h2>
+    <hr>
+    <h2>{{ 'Run a period'|t('vismaz') }}</h2>
 
-        <form method="post" accept-charset="UTF-8">
-            {{ csrfInput() }}
-            {{ actionInput('vismaz/documents/push-period') }}
-            <div class="flex" style="gap:8px;align-items:flex-end;">
-                <div class="field">
-                    <div class="heading"><label>{{ 'From'|t('vismaz') }}</label></div>
-                    <div class="input"><input type="date" name="from" class="text" required></div>
-                </div>
-                <div class="field">
-                    <div class="heading"><label>{{ 'To'|t('vismaz') }}</label></div>
-                    <div class="input"><input type="date" name="to" class="text"></div>
-                </div>
-                <button type="submit" class="btn submit">{{ 'Send summary voucher'|t('vismaz') }}</button>
+    <form method="post" accept-charset="UTF-8">
+        {{ csrfInput() }}
+        {{ actionInput('vismaz/documents/push-period') }}
+        <div class="flex" style="gap:8px;align-items:flex-end;">
+            <div class="field">
+                <div class="heading"><label>{{ 'From'|t('vismaz') }}</label></div>
+                <div class="input"><input type="date" name="from" class="text" required></div>
             </div>
-        </form>
-
-        <h2 style="margin-top:24px;">{{ 'SIE 4 export'|t('vismaz') }}</h2>
-        <div class="readable">
-            <p class="light">{{ 'For merchants on desktop Visma Administration, which has no API. Same journal, written to a file the accountant imports.'|t('vismaz') }}</p>
+            <div class="field">
+                <div class="heading"><label>{{ 'To'|t('vismaz') }}</label></div>
+                <div class="input"><input type="date" name="to" class="text"></div>
+            </div>
+            <button type="submit" class="btn submit">{{ 'Send summary voucher'|t('vismaz') }}</button>
         </div>
+    </form>
 
-        <form method="post" accept-charset="UTF-8">
-            {{ csrfInput() }}
-            {{ actionInput('vismaz/sie/export') }}
-            <div class="flex" style="gap:8px;align-items:flex-end;">
-                <div class="field">
-                    <div class="heading"><label>{{ 'From'|t('vismaz') }}</label></div>
-                    <div class="input"><input type="date" name="from" class="text" required></div>
-                </div>
-                <div class="field">
-                    <div class="heading"><label>{{ 'To'|t('vismaz') }}</label></div>
-                    <div class="input"><input type="date" name="to" class="text" required></div>
-                </div>
-                <div class="field">
-                    <div class="input">
-                        <label><input type="checkbox" name="includeSynced" value="1"> {{ 'Include orders already in Visma'|t('vismaz') }}</label>
-                    </div>
-                </div>
-                <button type="submit" class="btn">{{ 'Download .se file'|t('vismaz') }}</button>
+    <h2 style="margin-top:24px;">{{ 'SIE 4 export'|t('vismaz') }}</h2>
+    <div class="readable">
+        <p class="light">{{ 'For merchants on desktop Visma Administration, which has no API. Same journal, written to a file the accountant imports.'|t('vismaz') }}</p>
+    </div>
+
+    <form method="post" accept-charset="UTF-8">
+        {{ csrfInput() }}
+        {{ actionInput('vismaz/sie/export') }}
+        <div class="flex" style="gap:8px;align-items:flex-end;">
+            <div class="field">
+                <div class="heading"><label>{{ 'From'|t('vismaz') }}</label></div>
+                <div class="input"><input type="date" name="from" class="text" required></div>
             </div>
-        </form>
-    {% endif %}
+            <div class="field">
+                <div class="heading"><label>{{ 'To'|t('vismaz') }}</label></div>
+                <div class="input"><input type="date" name="to" class="text" required></div>
+            </div>
+            <div class="field">
+                <div class="input">
+                    <label><input type="checkbox" name="includeSynced" value="1"> {{ 'Include orders already in Visma'|t('vismaz') }}</label>
+                </div>
+            </div>
+            <button type="submit" class="btn">{{ 'Download .se file'|t('vismaz') }}</button>
+        </div>
+    </form>
 {% endblock %}

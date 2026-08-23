@@ -20,7 +20,6 @@ class AuthController extends Controller
         $this->stdout('Environment:  ' . $settings->environment . "\n");
         $this->stdout('API:          ' . $settings->getApiBaseUrl() . "\n");
         $this->stdout('Mode:         ' . $settings->documentMode . "\n");
-        $this->stdout('Edition:      ' . ($plugin->isPro() ? 'Pro' : 'Lite') . "\n");
 
         if (!$plugin->getAuth()->isConfigured()) {
             $this->stdout("Status:       no client ID or secret configured\n", Console::FG_YELLOW);

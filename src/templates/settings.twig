@@ -2,7 +2,6 @@
 {% from "_includes/forms" import textField, lightswitchField, selectField, autosuggestField %}
 
 {% set plugin = plugin ?? craft.app.plugins.getPlugin('vismaz') %}
-{% set isPro = plugin.isPro() %}
 {% set auth = plugin.auth %}
 {% set connection = auth.getConnection() %}
 {% set basLabels = {
@@ -102,48 +101,46 @@
     value: settings.documentMode,
     options: {
         invoice: 'Customer invoice per order'|t('vismaz'),
-        voucher: 'Periodic summary voucher'|t('vismaz') ~ (isPro ? '' : ' — ' ~ 'Pro'|t('vismaz'))
+        voucher: 'Periodic summary voucher'|t('vismaz')
     },
     errors: settings.getErrors('documentMode')
 }) }}
 
-{% if isPro %}
-    {{ selectField({
-        label: 'Aggregation period'|t('vismaz'),
-        id: 'voucherPeriod',
-        name: 'voucherPeriod',
-        value: settings.voucherPeriod,
-        options: {
-            daily: 'Daily'|t('vismaz'),
-            weekly: 'Weekly'|t('vismaz'),
-            monthly: 'Monthly'|t('vismaz')
-        }
-    }) }}
+{{ selectField({
+    label: 'Aggregation period'|t('vismaz'),
+    id: 'voucherPeriod',
+    name: 'voucherPeriod',
+    value: settings.voucherPeriod,
+    options: {
+        daily: 'Daily'|t('vismaz'),
+        weekly: 'Weekly'|t('vismaz'),
+        monthly: 'Monthly'|t('vismaz')
+    }
+}) }}
 
-    {{ textField({
-        label: 'Voucher series'|t('vismaz'),
-        id: 'voucherSeries',
-        name: 'voucherSeries',
-        value: settings.voucherSeries,
-        size: 4,
-        errors: settings.getErrors('voucherSeries')
-    }) }}
+{{ textField({
+    label: 'Voucher series'|t('vismaz'),
+    id: 'voucherSeries',
+    name: 'voucherSeries',
+    value: settings.voucherSeries,
+    size: 4,
+    errors: settings.getErrors('voucherSeries')
+}) }}
 
-    {{ lightswitchField({
-        label: 'Send automatically when an order completes'|t('vismaz'),
-        instructions: 'Queued, never inline: a Visma outage must not be able to stop a customer paying.'|t('vismaz'),
-        id: 'autoPush',
-        name: 'autoPush',
-        on: settings.autoPush
-    }) }}
+{{ lightswitchField({
+    label: 'Send automatically when an order completes'|t('vismaz'),
+    instructions: 'Queued, never inline: a Visma outage must not be able to stop a customer paying.'|t('vismaz'),
+    id: 'autoPush',
+    name: 'autoPush',
+    on: settings.autoPush
+}) }}
 
-    {{ lightswitchField({
-        label: 'Create credit notes for refunds'|t('vismaz'),
-        id: 'syncRefunds',
-        name: 'syncRefunds',
-        on: settings.syncRefunds
-    }) }}
-{% endif %}
+{{ lightswitchField({
+    label: 'Create credit notes for refunds'|t('vismaz'),
+    id: 'syncRefunds',
+    name: 'syncRefunds',
+    on: settings.syncRefunds
+}) }}
 
 {% set statusOptions = [] %}
 {% if craft.app.plugins.isPluginEnabled('commerce') %}
@@ -246,39 +243,37 @@
     on: settings.roundToWholeKronor
 }) }}
 
-{% if isPro %}
-    {{ lightswitchField({
-        label: 'Apply reverse charge to EU business sales'|t('vismaz'),
-        instructions: 'Omvänd betalningsskyldighet: a sale to another EU country against a valid VAT number is zero-rated, and the invoice says so.'|t('vismaz'),
-        id: 'reverseChargeEnabled',
-        name: 'reverseChargeEnabled',
-        on: settings.reverseChargeEnabled
-    }) }}
+{{ lightswitchField({
+    label: 'Apply reverse charge to EU business sales'|t('vismaz'),
+    instructions: 'Omvänd betalningsskyldighet: a sale to another EU country against a valid VAT number is zero-rated, and the invoice says so.'|t('vismaz'),
+    id: 'reverseChargeEnabled',
+    name: 'reverseChargeEnabled',
+    on: settings.reverseChargeEnabled
+}) }}
 
-    {{ lightswitchField({
-        label: 'Validate VAT numbers against VIES'|t('vismaz'),
-        instructions: 'Strongly recommended. When VIES cannot be reached the sale stays taxed — zero-rating on the strength of a timeout is the merchant’s liability, not the buyer’s.'|t('vismaz'),
-        id: 'validateVatNumbers',
-        name: 'validateVatNumbers',
-        on: settings.validateVatNumbers
-    }) }}
+{{ lightswitchField({
+    label: 'Validate VAT numbers against VIES'|t('vismaz'),
+    instructions: 'Strongly recommended. When VIES cannot be reached the sale stays taxed — zero-rating on the strength of a timeout is the merchant’s liability, not the buyer’s.'|t('vismaz'),
+    id: 'validateVatNumbers',
+    name: 'validateVatNumbers',
+    on: settings.validateVatNumbers
+}) }}
 
-    {{ textField({
-        label: 'Reverse charge note'|t('vismaz'),
-        instructions: 'Printed on the invoice. Swedish law wants the invoice to say so; the buyer’s own tax authority wants it in a language they read.'|t('vismaz'),
-        id: 'reverseChargeNote',
-        name: 'reverseChargeNote',
-        value: settings.reverseChargeNote
-    }) }}
+{{ textField({
+    label: 'Reverse charge note'|t('vismaz'),
+    instructions: 'Printed on the invoice. Swedish law wants the invoice to say so; the buyer’s own tax authority wants it in a language they read.'|t('vismaz'),
+    id: 'reverseChargeNote',
+    name: 'reverseChargeNote',
+    value: settings.reverseChargeNote
+}) }}
 
-    {{ lightswitchField({
-        label: 'Apply destination VAT to EU consumer sales (OSS)'|t('vismaz'),
-        instructions: 'Turn on once you are registered for One Stop Shop. The OSS report then breaks the quarter down by country and rate for you.'|t('vismaz'),
-        id: 'ossEnabled',
-        name: 'ossEnabled',
-        on: settings.ossEnabled
-    }) }}
-{% endif %}
+{{ lightswitchField({
+    label: 'Apply destination VAT to EU consumer sales (OSS)'|t('vismaz'),
+    instructions: 'Turn on once you are registered for One Stop Shop. The OSS report then breaks the quarter down by country and rate for you.'|t('vismaz'),
+    id: 'ossEnabled',
+    name: 'ossEnabled',
+    on: settings.ossEnabled
+}) }}
 
 <hr>
 
@@ -335,38 +330,36 @@
     }) }}
 {% endfor %}
 
-{% if isPro %}
-    {% set gatewayRows = [] %}
-    {% if craft.app.plugins.isPluginEnabled('commerce') %}
-        {% for gateway in craft.commerce.gateways.getAllGateways() %}
-            {% set mapped = settings.paymentAccounts[gateway.handle] ?? {} %}
-            {% set gatewayRows = gatewayRows|merge([{
-                gateway: gateway.handle,
-                account: mapped.account ?? '',
-                feeAccount: mapped.feeAccount ?? '',
-                feePercent: mapped.feePercent ?? '',
-                feeFixed: mapped.feeFixed ?? ''
-            }]) %}
-        {% endfor %}
-    {% endif %}
-
-    {{ forms.editableTableField({
-        label: 'Payment method accounts'|t('vismaz'),
-        instructions: 'Klarna, Swish, card and invoice do not settle to the same account, and the processor’s cut is a cost posting of its own. This is the setting that decides whether the books reconcile against the payment statements.'|t('vismaz'),
-        id: 'paymentAccounts',
-        name: 'paymentAccounts',
-        cols: {
-            gateway: { heading: 'Gateway'|t('vismaz'), type: 'singleline', width: '25%' },
-            account: { heading: 'Settles to'|t('vismaz'), type: 'singleline', width: '15%' },
-            feeAccount: { heading: 'Fee account'|t('vismaz'), type: 'singleline', width: '15%' },
-            feePercent: { heading: 'Fee %'|t('vismaz'), type: 'singleline', width: '15%' },
-            feeFixed: { heading: 'Fee fixed'|t('vismaz'), type: 'singleline', width: '15%' }
-        },
-        rows: gatewayRows,
-        addRowLabel: 'Add a gateway'|t('vismaz'),
-        static: false
-    }) }}
+{% set gatewayRows = [] %}
+{% if craft.app.plugins.isPluginEnabled('commerce') %}
+    {% for gateway in craft.commerce.gateways.getAllGateways() %}
+        {% set mapped = settings.paymentAccounts[gateway.handle] ?? {} %}
+        {% set gatewayRows = gatewayRows|merge([{
+            gateway: gateway.handle,
+            account: mapped.account ?? '',
+            feeAccount: mapped.feeAccount ?? '',
+            feePercent: mapped.feePercent ?? '',
+            feeFixed: mapped.feeFixed ?? ''
+        }]) %}
+    {% endfor %}
 {% endif %}
+
+{{ forms.editableTableField({
+    label: 'Payment method accounts'|t('vismaz'),
+    instructions: 'Klarna, Swish, card and invoice do not settle to the same account, and the processor’s cut is a cost posting of its own. This is the setting that decides whether the books reconcile against the payment statements.'|t('vismaz'),
+    id: 'paymentAccounts',
+    name: 'paymentAccounts',
+    cols: {
+        gateway: { heading: 'Gateway'|t('vismaz'), type: 'singleline', width: '25%' },
+        account: { heading: 'Settles to'|t('vismaz'), type: 'singleline', width: '15%' },
+        feeAccount: { heading: 'Fee account'|t('vismaz'), type: 'singleline', width: '15%' },
+        feePercent: { heading: 'Fee %'|t('vismaz'), type: 'singleline', width: '15%' },
+        feeFixed: { heading: 'Fee fixed'|t('vismaz'), type: 'singleline', width: '15%' }
+    },
+    rows: gatewayRows,
+    addRowLabel: 'Add a gateway'|t('vismaz'),
+    static: false
+}) }}
 
 <hr>
 

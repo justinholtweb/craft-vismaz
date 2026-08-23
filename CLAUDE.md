@@ -4,7 +4,7 @@
 
 Vismaz connects Craft Commerce 5 to **Visma eAccounting** — the product sold in Sweden as *Visma
 eEkonomi*, renamed *Bokföring & Fakturering* under the **Spiris** brand in 2025 (the API did not
-change with the rebrand). Distributed as `justinholtweb/craft-vismaz`. **Lite $79 / Pro $149.**
+change with the rebrand). Distributed as `justinholtweb/craft-vismaz`. **$79, $59/year renewal — a single edition.**
 
 ## Why it exists
 
@@ -137,12 +137,13 @@ No local PHP on this Mac. Everything runs inside the plugin-testing container:
 
 ```sh
 cd ~/Sites/plugin-testing
-ddev exec php /var/www/craft-vismaz/tests/integration/checks.php   # 171 checks
+ddev exec php /var/www/craft-vismaz/tests/integration/checks.php   # 169 checks
 ddev exec bash -c 'find /var/www/craft-vismaz/src -name "*.php" -print0 | xargs -0 -n1 php -l'
 ```
 
-The suite switches to Pro for the bulk of the run, exercises Lite in its own section, and restores
-the edition, the settings and every fixture in a `finally`. Nothing in it talks to Visma —
+Vismaz is a **single-edition** plugin — one price, no feature gating — and a check walks `src/`
+asserting no `isPro`/`EDITION_` reference creeps back in. The suite restores the settings and every
+fixture in a `finally`. Nothing in it talks to Visma —
 correctness lives in the builders and the tax decisions, not in the transport.
 
 **Harness notes** (neither is a Vismaz bug):

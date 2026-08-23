@@ -277,7 +277,7 @@ class Sync extends Component
 
         // Voucher mode aggregates, so a single order is swept up by the period run rather than
         // pushed on its own.
-        if ($settings->documentMode === Settings::MODE_VOUCHER && $plugin->isPro()) {
+        if ($settings->documentMode === Settings::MODE_VOUCHER) {
             [$start, $end] = Documents::periodFor($order->dateOrdered ?? new DateTime(), $settings->voucherPeriod);
 
             return $this->syncPeriod($start, $end);
@@ -318,7 +318,7 @@ class Sync extends Component
     {
         $plugin = Plugin::getInstance();
 
-        if (!$plugin->isPro() || !$plugin->getSettings()->syncRefunds) {
+        if (!$plugin->getSettings()->syncRefunds) {
             return ['status' => self::STATUS_SKIPPED, 'document' => null, 'message' => Craft::t('vismaz', 'Refund syncing is off.')];
         }
 

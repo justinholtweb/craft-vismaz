@@ -63,9 +63,7 @@
         {% if canPush and connected %}
             <button type="button" class="btn submit" id="vismaz-push-{{ order.id }}">{{ 'Send to Visma'|t('vismaz') }}</button>
 
-            {% if isPro %}
-                <button type="button" class="btn" id="vismaz-refund-{{ order.id }}">{{ 'Credit refunds'|t('vismaz') }}</button>
-            {% endif %}
+            <button type="button" class="btn" id="vismaz-refund-{{ order.id }}">{{ 'Credit refunds'|t('vismaz') }}</button>
         {% endif %}
 
         <span class="spinner hidden" id="vismaz-spinner-{{ order.id }}"></span>

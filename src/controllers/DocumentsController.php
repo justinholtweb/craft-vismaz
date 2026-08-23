@@ -63,7 +63,6 @@ class DocumentsController extends Controller
             'pages' => (int)ceil($total / $limit),
             'status' => $status,
             'type' => $type,
-            'isPro' => $plugin->isPro(),
             'connected' => $plugin->getAuth()->isConnected(),
         ]);
     }
@@ -227,10 +226,6 @@ class DocumentsController extends Controller
         $this->requirePostRequest();
 
         $plugin = Plugin::getInstance();
-
-        if (!$plugin->isPro()) {
-            throw new \yii\web\ForbiddenHttpException('Summary vouchers need Vismaz Pro.');
-        }
 
         $request = Craft::$app->getRequest();
         $from = new DateTimeImmutable((string)$request->getRequiredBodyParam('from'));

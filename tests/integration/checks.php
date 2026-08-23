@@ -75,7 +75,6 @@ $suffix = substr(md5((string)microtime(true)), 0, 6);
 $createdProducts = [];
 $createdOrders = [];
 $originalSettings = $plugin->getSettings()->toArray();
-$originalEdition = Craft::$app->getPlugins()->getPluginInfo(Plugin::HANDLE)['edition'] ?? Plugin::EDITION_LITE;
 
 /**
  * `craft-penny` (a sibling in this shared harness) registers an
@@ -86,12 +85,6 @@ $originalEdition = Craft::$app->getPlugins()->getPluginInfo(Plugin::HANDLE)['edi
 if (Craft::$app->getPlugins()->isPluginEnabled('penny')) {
     yii\base\Event::off(craft\services\Elements::class, craft\services\Elements::EVENT_BEFORE_SAVE_ELEMENT);
     echo "  ! detached craft-penny's broken beforeSaveElement handler for this run\n";
-}
-
-function switchEdition(string $edition): void
-{
-    Craft::$app->getPlugins()->switchEdition(Plugin::HANDLE, $edition);
-    Craft::$app->getProjectConfig()->saveModifiedConfigData();
 }
 
 /**
@@ -495,8 +488,6 @@ try {
         'syncStatusHandles' => [],
         'autoPush' => false,
     ]);
-
-    switchEdition(Plugin::EDITION_PRO);
 
     $productA = makeProduct("VZ-A-$suffix", 100.00);
     $productB = makeProduct("VZ-B-$suffix", 249.50);
@@ -1132,9 +1123,7 @@ try {
     });
 
     // ---------------------------------------------------------------------
-    section('Pro features');
-
-    check('this install is on Pro for these checks', fn() => $plugin->isPro());
+    section('Cross-border VAT');
 
     check('OSS applies to an EU consumer sale once enabled', function() use ($plugin, $deOrder) {
         applySettings(['ossEnabled' => true]);
@@ -1169,52 +1158,70 @@ try {
     });
 
     // ---------------------------------------------------------------------
-    section('Lite edition');
+    section('Single edition');
 
-    switchEdition(Plugin::EDITION_LITE);
-
-    check('the plugin reports itself as Lite', fn() => !$plugin->isPro());
-
-    check('reverse charge is a Pro feature and does not apply on Lite', function() use ($plugin, $deOrder) {
-        applySettings(['reverseChargeEnabled' => true]);
-
-        return !$plugin->getTax()->treatOrder($deOrder)->isReverseCharge();
+    check('the plugin declares exactly one edition', function() {
+        // Vismaz is sold at one price, so there is no edition to be on the wrong side of.
+        // Craft gives an editionless plugin the single `standard` edition.
+        return count(Plugin::editions()) === 1 ?: implode(', ', Plugin::editions());
     });
 
-    check('OSS is a Pro feature and does not apply on Lite', function() use ($plugin, $deOrder) {
+    check('nothing in the source gates a feature on an edition', function() {
+        $offenders = [];
+
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__, 2) . '/src'));
+
+        foreach ($files as $file) {
+            if (!in_array($file->getExtension(), ['php', 'twig'], true)) {
+                continue;
+            }
+
+            $contents = file_get_contents($file->getPathname());
+
+            if (str_contains($contents, 'isPro') || str_contains($contents, 'EDITION_')) {
+                $offenders[] = $file->getFilename();
+            }
+        }
+
+        return $offenders === [] ?: 'edition gating left in: ' . implode(', ', $offenders);
+    });
+
+    check('reverse charge is available to every install', function() use ($plugin, $deOrder) {
+        applySettings(['reverseChargeEnabled' => true, 'validateVatNumbers' => false]);
+
+        // Still not reverse charged, because no VAT number field is configured — but the reason
+        // must be the missing number, not the edition.
+        $treatment = $plugin->getTax()->treatOrder($deOrder);
+
+        return !str_contains(strtolower($treatment->reason), 'pro') ?: $treatment->reason;
+    });
+
+    check('OSS is available to every install', function() use ($plugin, $deOrder) {
         applySettings(['ossEnabled' => true]);
         $treatment = $plugin->getTax()->treatOrder($deOrder);
         applySettings(['ossEnabled' => false]);
 
-        return $treatment->kind !== TaxTreatment::KIND_OSS ?: 'OSS applied on Lite';
+        return $treatment->kind === TaxTreatment::KIND_OSS ?: $treatment->kind;
     });
 
-    check('Lite still builds invoices — the core job is not gated', function() use ($plugin, $seOrder) {
-        $document = $plugin->getDocuments()->buildInvoice($seOrder, false);
-
-        return $document->rows !== [];
-    });
-
-    check('Lite still resolves a domestic tax treatment', function() use ($plugin, $seOrder) {
-        return $plugin->getTax()->treatOrder($seOrder)->kind === TaxTreatment::KIND_DOMESTIC;
-    });
-
-    check('Lite still applies öresavrundning', function() use ($plugin, $seOrder) {
-        $document = $plugin->getDocuments()->buildInvoice($seOrder, false);
-
-        return abs($document->getGrossTotal() - round($document->getGrossTotal())) < 0.005;
-    });
-
-    check('refund syncing is refused on Lite', function() use ($plugin, $seOrder) {
+    check('refund syncing is available to every install', function() use ($plugin, $seOrder) {
+        applySettings(['syncRefunds' => true]);
         $result = $plugin->getSync()->syncRefund($seOrder);
 
-        return $result['status'] === Sync::STATUS_SKIPPED ?: $result['status'];
+        // Skipped because the order has no refunds — not because of an edition.
+        return ($result['status'] === Sync::STATUS_SKIPPED
+            && str_contains(strtolower((string)$result['message']), 'refunded')) ?: (string)$result['message'];
     });
 
-    // ---------------------------------------------------------------------
-    section('Wiring');
+    check('refund syncing still respects its own setting', function() use ($plugin, $seOrder) {
+        applySettings(['syncRefunds' => false]);
+        $result = $plugin->getSync()->syncRefund($seOrder);
+        applySettings(['syncRefunds' => true]);
 
-    switchEdition(Plugin::EDITION_PRO);
+        return str_contains(strtolower((string)$result['message']), 'off') ?: (string)$result['message'];
+    });
+
+    section('Wiring');
 
     check('every service resolves', function() use ($plugin) {
         foreach (['auth', 'api', 'tax', 'documents', 'sync', 'customers', 'articles', 'sie', 'log'] as $name) {
@@ -1229,7 +1236,7 @@ try {
     check('the Twig variable answers without a connection', function() {
         $variable = new \justinholtweb\vismaz\twig\VismazVariable();
 
-        return is_bool($variable->isConnected()) && is_bool($variable->isPro());
+        return is_bool($variable->isConnected());
     });
 
     check('the redirect URI is an absolute action URL', function() use ($plugin) {
@@ -1452,12 +1459,6 @@ try {
         Craft::$app->getProjectConfig()->saveModifiedConfigData();
     } catch (Throwable $e) {
         echo "  ! could not restore settings: {$e->getMessage()}\n";
-    }
-
-    try {
-        switchEdition($originalEdition);
-    } catch (Throwable $e) {
-        echo "  ! could not restore the edition: {$e->getMessage()}\n";
     }
 
     echo "\n";
