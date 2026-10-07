@@ -7,6 +7,12 @@ use justinholtweb\vismaz\db\Table;
 
 /**
  * @see Table::DOCUMENTORDERS
+ *
+ * @property int $id
+ * @property int $documentId
+ * @property int $orderId
+ * @property string $dateCreated
+ * @property string $dateUpdated
  */
 class DocumentOrderRecord extends ActiveRecord
 {

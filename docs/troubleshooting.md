@@ -30,7 +30,7 @@ lose the other one, but it does mean you are looking at a different connection.
 ## The wrong company
 
 Vismaz asks Visma to prompt for a company on every connect, precisely so this is visible. If the
-company shown on the settings screen is not the one you want, disconnect and reconnect.
+company shown on the Connection screen (**Vismaz → Connection**) is not the one you want, disconnect and reconnect.
 
 ## "Rate limited by Visma"
 

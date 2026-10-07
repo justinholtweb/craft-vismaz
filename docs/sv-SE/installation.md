@@ -43,7 +43,14 @@ inte vilken del som skilde sig.
    Vismaz håller en anslutning för var och en — att byta mellan dem tappar alltså ingen av dem.
 3. Klistra in **Client ID** och **Client secret**. Båda tar emot miljövariabler, och på en riktig
    webbplats bör de vara miljövariabler.
-4. Spara, tryck sedan **Connect to Visma** och välj företag.
+4. Spara, gå sedan till **Vismaz → Anslutning**, tryck **Connect to Visma** och välj företag.
+
+Anslutningsskärmen är skild från inställningarna med avsikt. Plugin-inställningar är skrivskyddade
+på en produktionswebbplats, där `allowAdminChanges` är avstängt, men anslutningen är ingen
+inställning: dess token lagras i databasen. En återkallad token kan alltså anslutas på nytt i
+produktion, av en administratör eller av den som har behörigheten **Ansluta, testa och koppla från
+Visma**. Ange klient-ID och hemlighet som miljövariabler där, eftersom inställningsskärmen inte
+sparar dem.
 
 Vismaz ber alltid Visma om att få välja företag i stället för att ta det du senast loggade in på.
 En handlare med både ett rörelsedrivande bolag och ett holdingbolag under samma inloggning skulle

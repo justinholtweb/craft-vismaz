@@ -148,7 +148,7 @@ class Customers extends Component
             'CorporateIdentityNumber' => $organisationNumber,
             'VatNumber' => $vatNumber,
             'TermsOfPaymentId' => null,
-            'InvoiceCountryCode' => $address?->countryCode ?? $settings->homeCountry,
+            'InvoiceCountryCode' => $address->countryCode ?? $settings->homeCountry,
         ];
 
         if ($address instanceof Address) {

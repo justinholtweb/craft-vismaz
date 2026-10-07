@@ -114,7 +114,7 @@ class Sie4
                 $transaction['account'],
                 $transaction['dimension'] ?? '',
                 number_format((float)$transaction['amount'], 2, '.', ''),
-                isset($transaction['text']) && $transaction['text'] !== null
+                isset($transaction['text'])
                     ? ' ' . $date->format('Ymd') . ' ' . $this->quote($transaction['text'])
                     : ''
             );

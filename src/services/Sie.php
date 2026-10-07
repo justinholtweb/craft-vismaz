@@ -8,7 +8,6 @@ use DateTimeImmutable;
 use DateTimeInterface;
 use justinholtweb\vismaz\helpers\Bas;
 use justinholtweb\vismaz\helpers\Sie4;
-use justinholtweb\vismaz\models\Document;
 use justinholtweb\vismaz\models\VoucherLine;
 use justinholtweb\vismaz\Plugin;
 use yii\base\Component;

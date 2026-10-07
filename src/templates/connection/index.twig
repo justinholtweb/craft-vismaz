@@ -1,0 +1,20 @@
+{% extends '_layouts/cp' %}
+{% import '_includes/forms' as forms %}
+
+{% set title = 'Visma connection'|t('vismaz') %}
+{% set selectedSubnavItem = 'connection' %}
+
+{% block content %}
+    <p>
+        {{ 'Environment:'|t('vismaz') }}
+        <strong>{{ settings.environment == 'production' ? 'Production'|t('vismaz') : 'Sandbox'|t('vismaz') }}</strong>
+    </p>
+
+    {% if not auth.isConfigured() %}
+        <p class="warning with-icon">
+            {{ 'The Visma client ID and secret aren’t set for this environment. An admin adds them in Vismaz’s settings, or as environment variables where admin changes are off.'|t('vismaz') }}
+        </p>
+    {% else %}
+        {% include 'vismaz/_connection' %}
+    {% endif %}
+{% endblock %}

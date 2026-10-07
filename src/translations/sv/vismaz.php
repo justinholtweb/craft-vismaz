@@ -54,4 +54,12 @@ return [
     'Export SIE files' => 'Exportera SIE-filer',
     'Sending order to Visma' => 'Skickar order till Visma',
     '“{value}” is not a BAS account number.' => '”{value}” är inte ett BAS-kontonummer.',
+    'Connection' => 'Anslutning',
+    'Visma connection' => 'Visma-anslutning',
+    'Connect, test and disconnect Visma' => 'Ansluta, testa och koppla från Visma',
+    'Environment:' => 'Miljö:',
+    'Production' => 'Produktion',
+    'Sandbox' => 'Sandlåda',
+    'The Visma client ID and secret aren’t set for this environment. An admin adds them in Vismaz’s settings, or as environment variables where admin changes are off.' => 'Visma-klientens ID och hemlighet är inte angivna för den här miljön. En administratör lägger till dem i Vismaz inställningar, eller som miljövariabler där administratörsändringar är avstängda.',
+    'Disconnect from Visma? Orders stop posting until you connect again.' => 'Koppla från Visma? Ordrar bokförs inte förrän du ansluter igen.',
 ];

@@ -7,7 +7,6 @@ use craft\web\Controller;
 use DateTimeImmutable;
 use justinholtweb\vismaz\Plugin;
 use Throwable;
-use yii\web\ForbiddenHttpException;
 use yii\web\Response;
 
 /**

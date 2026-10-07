@@ -1,7 +1,7 @@
 {
     "name": "justinholtweb/craft-vismaz",
     "description": "Visma eAccounting integration for Craft Commerce — post orders as invoices or summary vouchers, with Swedish VAT, reverse charge, OSS and SIE 4 export.",
-    "version": "5.0.0",
+    "version": "5.0.1",
     "type": "craft-plugin",
     "keywords": [
         "craftcms",
@@ -57,5 +57,10 @@
         "documentationUrl": "https://github.com/justinholtweb/craft-vismaz/blob/main/README.md",
         "changelogUrl": "https://raw.githubusercontent.com/justinholtweb/craft-vismaz/main/CHANGELOG.md",
         "class": "justinholtweb\\vismaz\\Plugin"
+    },
+    "require-dev": {
+        "craftcms/ecs": "dev-main",
+        "craftcms/phpstan": "dev-main",
+        "phpstan/phpstan": "^1.12 || ^2.2"
     }
 }

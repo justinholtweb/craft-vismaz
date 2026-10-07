@@ -3,7 +3,6 @@
 namespace justinholtweb\vismaz\helpers;
 
 use Craft;
-use GuzzleHttp\Exception\GuzzleException;
 use Throwable;
 
 /**
@@ -119,7 +118,7 @@ abstract class Vies
             $cache->set($cacheKey, $result, $result['valid'] ? self::CACHE_TTL_VALID : self::CACHE_TTL_INVALID);
 
             return $result;
-        } catch (GuzzleException|Throwable $e) {
+        } catch (Throwable $e) {
             // Deliberately not cached: a timeout says nothing about the number.
             return $miss($e->getMessage());
         }

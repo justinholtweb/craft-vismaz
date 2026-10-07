@@ -1,0 +1,76 @@
+{#
+ # The connection: redirect URI, connect, test and disconnect.
+ #
+ # Shared by the plugin settings page and the Connection screen. The settings page is admin-only and
+ # read-only wherever allowAdminChanges is off, which is every production site — so until 5.0.1
+ # nobody could connect, reconnect after a revoked token, or disconnect Visma in production. The
+ # token is stored in the database, not project config, so connecting never needed admin changes.
+ #
+ # Expects: auth, connection
+ #}
+{# Imports don't travel into an included template. #}
+{% import '_includes/forms' as forms %}
+{{ forms.field({
+    label: 'Redirect URI'|t('vismaz'),
+    instructions: 'Register this exactly, character for character, as the redirect URI on your Visma app. A mismatch is rejected by Visma before your merchant ever sees a sign-in screen.'|t('vismaz')
+}, '<code class="vismaz-redirect">' ~ auth.getRedirectUri() ~ '</code>') }}
+
+<div class="field">
+    {% if connection %}
+        <div class="vismaz-connected">
+            <p>
+                <span class="status green"></span>
+                {{ 'Connected to {company}'|t('vismaz', { company: connection.companyName ?: 'Visma' }) }}
+                {%- if connection.organisationNumber %} <span class="light">({{ connection.organisationNumber }})</span>{% endif %}
+            </p>
+            <div class="buttons">
+                <button type="button" class="btn" id="vismaz-test">{{ 'Test connection'|t('vismaz') }}</button>
+                <button type="button" class="btn" id="vismaz-disconnect">{{ 'Disconnect'|t('vismaz') }}</button>
+                <span class="spinner hidden" id="vismaz-spinner"></span>
+                <span id="vismaz-result" class="light"></span>
+            </div>
+        </div>
+    {% else %}
+        <div class="buttons">
+            <a class="btn submit" href="{{ actionUrl('vismaz/oauth/connect') }}">{{ 'Connect to Visma'|t('vismaz') }}</a>
+        </div>
+        <p class="light">{{ 'Save your client ID and secret before connecting.'|t('vismaz') }}</p>
+    {% endif %}
+</div>
+
+{% js %}
+(function() {
+    var testBtn = document.getElementById('vismaz-test');
+    var disconnectBtn = document.getElementById('vismaz-disconnect');
+    var spinner = document.getElementById('vismaz-spinner');
+    var result = document.getElementById('vismaz-result');
+
+    if (testBtn) {
+        testBtn.addEventListener('click', function() {
+            spinner.classList.remove('hidden');
+            result.textContent = '';
+
+            Craft.sendActionRequest('POST', 'vismaz/oauth/test')
+                .then(function(response) {
+                    result.textContent = response.data.message;
+                })
+                .catch(function(error) {
+                    result.textContent = (error.response && error.response.data && error.response.data.message) || 'Request failed.';
+                })
+                .finally(function() {
+                    spinner.classList.add('hidden');
+                });
+        });
+    }
+
+    if (disconnectBtn) {
+        disconnectBtn.addEventListener('click', function() {
+            // Never nest a <form> inside the settings form — post the action instead.
+            if (!confirm({{ 'Disconnect from Visma? Orders stop posting until you connect again.'|t('vismaz')|json_encode|raw }})) { return; }
+            Craft.sendActionRequest('POST', 'vismaz/oauth/disconnect')
+                .then(function() { window.location.reload(); })
+                .catch(function() { window.location.reload(); });
+        });
+    }
+})();
+{% endjs %}

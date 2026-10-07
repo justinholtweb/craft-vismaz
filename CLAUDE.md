@@ -121,6 +121,16 @@ fail loudly, it quietly misfiles a year of revenue.
 - **Never mark plugin settings `required`** — Craft validates them wholesale, so one required
   credential blocks saving every other setting on a fresh install.
 - **Never nest a `<form>` in a CP template** — post secondary actions with `Craft.sendActionRequest`.
+- **The connection is not a setting** (5.0.1). Its token is DB data, so connecting must work where
+  `allowAdminChanges` is off: `vismaz/connection` behind `vismaz-manageConnection`, never
+  `requireAdmin()` (which needs admin changes). The UI is `_connection.twig`, included by that
+  screen and by the settings page — and an included template needs its own `{% import %}`.
+- **The callback compares the state's environment and user** with the current ones; existence
+  alone let a sandbox sign-in land on production.
+- **The harness can't reach Visma**, so a test can't wait for a real token exchange. It tells
+  "refused at the state check" from "tried to exchange" by the connection error the exchange
+  reports. And `craft-yo` keeps CP notices on screen until dismissed, so use a fresh session per
+  attempt or an earlier notice reads as this one's.
 - **Project config writes are buffered** until the request ends; a bare console script has to
   flush them itself.
 
@@ -138,6 +148,8 @@ No local PHP on this Mac. Everything runs inside the plugin-testing container:
 ```sh
 cd ~/Sites/plugin-testing
 ddev exec php /var/www/craft-vismaz/tests/integration/checks.php   # 169 checks
+docker exec -w /var/www/html ddev-plugin-testing-web php /var/www/craft-vismaz/tests/integration/security.php  # 12: connection permission and production, callback state checks
+docker exec -w /sites/craft-vismaz ddev-phpstan-runner-web bash -c 'vendor/bin/phpstan analyse --memory-limit=1G && vendor/bin/ecs check'
 ddev exec bash -c 'find /var/www/craft-vismaz/src -name "*.php" -print0 | xargs -0 -n1 php -l'
 ```
 

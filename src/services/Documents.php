@@ -56,7 +56,7 @@ class Documents extends Component
             'description' => Craft::t('vismaz', 'Order {reference}', ['reference' => $order->reference]),
         ]);
 
-        $document->dueDate = (clone $document->date)->modify('+' . max(0, $settings->paymentTermsDays) . ' days');
+        $document->dueDate = \DateTimeImmutable::createFromInterface($document->date)->modify('+' . max(0, $settings->paymentTermsDays) . ' days');
         $document->tax = $tax->treatOrder($order);
 
         if ($resolveRemote) {

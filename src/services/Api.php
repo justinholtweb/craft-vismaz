@@ -4,7 +4,6 @@ namespace justinholtweb\vismaz\services;
 
 use Craft;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\GuzzleException;
 use justinholtweb\vismaz\Plugin;
 use Throwable;
 use yii\base\Component;
@@ -119,7 +118,7 @@ class Api extends Component
                     'json' => $body,
                     'http_errors' => false,
                 ], static fn($v): bool => $v !== null));
-            } catch (GuzzleException|Throwable $e) {
+            } catch (Throwable $e) {
                 $log->error('api.request', $e->getMessage(), [
                     'method' => $method, 'url' => $url, 'requestBody' => $body,
                 ] + $context);

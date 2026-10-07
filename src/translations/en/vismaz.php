@@ -31,4 +31,12 @@ return [
     'View the connection log' => 'View the connection log',
     'Export SIE files' => 'Export SIE files',
     'Sending order to Visma' => 'Sending order to Visma',
+    'Connection' => 'Connection',
+    'Visma connection' => 'Visma connection',
+    'Connect, test and disconnect Visma' => 'Connect, test and disconnect Visma',
+    'Environment:' => 'Environment:',
+    'Production' => 'Production',
+    'Sandbox' => 'Sandbox',
+    'The Visma client ID and secret aren’t set for this environment. An admin adds them in Vismaz’s settings, or as environment variables where admin changes are off.' => 'The Visma client ID and secret aren’t set for this environment. An admin adds them in Vismaz’s settings, or as environment variables where admin changes are off.',
+    'Disconnect from Visma? Orders stop posting until you connect again.' => 'Disconnect from Visma? Orders stop posting until you connect again.',
 ];

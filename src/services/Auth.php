@@ -8,7 +8,6 @@ use craft\helpers\StringHelper;
 use craft\helpers\UrlHelper;
 use DateTime;
 use DateTimeImmutable;
-use justinholtweb\vismaz\db\Table;
 use justinholtweb\vismaz\Plugin;
 use justinholtweb\vismaz\records\TokenRecord;
 use Throwable;
@@ -169,7 +168,7 @@ class Auth extends Component
 
             $payload = $this->requestToken([
                 'grant_type' => 'refresh_token',
-                'refresh_token' => (string)self::decrypt($fresh?->refreshToken ?? $record->refreshToken),
+                'refresh_token' => (string)self::decrypt($fresh->refreshToken ?? $record->refreshToken),
             ]);
 
             return $this->storeToken($payload, $record->connectedBy);

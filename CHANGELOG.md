@@ -1,5 +1,25 @@
 # Changelog
 
+## 5.0.1 - 2026-10-07
+
+> {warning} Connecting, testing and disconnecting Visma have moved from the plugin settings page to
+> **Vismaz → Connection**, behind a new **Connect, test and disconnect Visma** permission. Admins
+> have it already; grant it to anyone else who looks after the connection. The plugin settings
+> page still shows the connection where admin changes are allowed.
+
+### Fixed
+- Connecting, reconnecting after a revoked token, testing and disconnecting all required admin
+  changes, so on a production site, where `allowAdminChanges` is off, nobody could do any of them.
+  The connection lives in the database, not in project config, so it now has its own screen that
+  works in production, behind its own permission. Clearing the connection log needs an admin but
+  no longer needs admin changes.
+
+### Security
+- The OAuth callback checked only that its `state` existed, not the environment and user it was
+  issued for. A sign-in started in sandbox could land its token on production if the environment
+  was switched before Visma sent the merchant back. A callback whose environment or user doesn't
+  match is now refused.
+
 ## 5.0.0
 
 Initial release.

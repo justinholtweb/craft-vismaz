@@ -58,7 +58,9 @@ class LogController extends Controller
     public function actionClear(): Response
     {
         $this->requirePostRequest();
-        $this->requireAdmin();
+        // The log is database data, not project config: clearing it is an admin's call, but not
+        // one that needs allowAdminChanges.
+        $this->requireAdmin(false);
 
         $count = Plugin::getInstance()->getLog()->clear();
         Craft::$app->getSession()->setNotice(Craft::t('vismaz', '{count} log entries cleared.', ['count' => $count]));

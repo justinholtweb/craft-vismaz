@@ -81,7 +81,7 @@ class DocumentRow extends Model
             'Text' => $this->text,
             'Quantity' => Money::round($this->quantity),
             'UnitPrice' => Money::round($this->unitPrice),
-            'VatPercent' => $this->tax?->rate ?? 0.0,
+            'VatPercent' => $this->tax->rate ?? 0.0,
         ];
 
         if ($this->articleId !== null) {

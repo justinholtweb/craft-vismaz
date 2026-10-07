@@ -57,7 +57,9 @@ php craft plugin/install vismaz
    your merchant ever reaches a sign-in screen.
 2. Paste the client ID and secret into Settings → Vismaz, pick **Sandbox** or **Production**, and
    save. Both are supported as env variables.
-3. Press **Connect to Visma** and pick the company. Vismaz always asks Visma which company to use
+3. Go to **Vismaz → Connection**, press **Connect to Visma** and pick the company. That screen works
+   in production too, and anyone with the **Connect, test and disconnect Visma** permission can use
+   it, not just admins. Vismaz always asks Visma which company to use
    rather than accepting the last one, so a merchant with a trading company and a holding company
    cannot silently connect the wrong books.
 4. Choose invoice or voucher mode, and check the ledger accounts against the merchant's own chart.

@@ -5,7 +5,6 @@ namespace justinholtweb\vismaz\controllers;
 use Craft;
 use craft\commerce\elements\Order;
 use craft\db\Query;
-use craft\helpers\AdminTable;
 use craft\web\Controller;
 use DateTimeImmutable;
 use justinholtweb\vismaz\db\Table;

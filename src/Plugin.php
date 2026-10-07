@@ -43,6 +43,13 @@ use yii\base\Event;
  */
 class Plugin extends BasePlugin
 {
+    /**
+     * Connect, reconnect, test and disconnect Visma. Not admin-only, and not tied to
+     * allowAdminChanges: the connection is runtime data in the database, and production — where
+     * admin changes are off — is exactly where a revoked token has to be reconnected.
+     */
+    public const PERMISSION_MANAGE_CONNECTION = 'vismaz-manageConnection';
+
     public const HANDLE = 'vismaz';
 
     public string $schemaVersion = '5.0.0';
@@ -177,6 +184,13 @@ class Plugin extends BasePlugin
             ];
         }
 
+        if ($user->checkPermission(self::PERMISSION_MANAGE_CONNECTION)) {
+            $subNav['connection'] = [
+                'label' => Craft::t('vismaz', 'Connection'),
+                'url' => 'vismaz/connection',
+            ];
+        }
+
         if ($user->getIsAdmin() && Craft::$app->getConfig()->getGeneral()->allowAdminChanges) {
             $subNav['settings'] = [
                 'label' => Craft::t('vismaz', 'Settings'),
@@ -226,6 +240,9 @@ class Plugin extends BasePlugin
                         'vismaz-viewLog' => [
                             'label' => Craft::t('vismaz', 'View the connection log'),
                         ],
+                        self::PERMISSION_MANAGE_CONNECTION => [
+                            'label' => Craft::t('vismaz', 'Connect, test and disconnect Visma'),
+                        ],
                         'vismaz-exportSie' => [
                             'label' => Craft::t('vismaz', 'Export SIE files'),
                         ],
@@ -247,6 +264,7 @@ class Plugin extends BasePlugin
                 $event->rules['vismaz/log'] = 'vismaz/log/index';
                 $event->rules['vismaz/log/<entryId:\d+>'] = 'vismaz/log/detail';
                 $event->rules['vismaz/reports/oss'] = 'vismaz/reports/oss';
+                $event->rules['vismaz/connection'] = 'vismaz/connection/index';
             }
         );
     }

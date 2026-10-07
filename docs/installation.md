@@ -42,7 +42,13 @@ disagreed.
    companies, and Vismaz keeps a connection for each — so moving between them loses neither.
 3. Paste the **Client ID** and **Client secret**. Both accept environment variables, and on a real
    site they should be environment variables.
-4. Save, then press **Connect to Visma** and pick the company.
+4. Save, then go to **Vismaz → Connection**, press **Connect to Visma** and pick the company.
+
+The Connection screen is separate from the settings on purpose. Plugin settings are read-only on a
+production site, where `allowAdminChanges` is off, but the connection isn't a setting: its token is
+stored in the database. So a revoked token can be reconnected in production, by an admin or by
+anyone with the **Connect, test and disconnect Visma** permission. Set the client ID and secret as
+environment variables there, since the settings screen won't save them.
 
 Vismaz always asks Visma which company to use rather than accepting the last one you signed into.
 A merchant with a trading company and a holding company under the same login would otherwise

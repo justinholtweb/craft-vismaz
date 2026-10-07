@@ -9,7 +9,6 @@ use DateTimeImmutable;
 use justinholtweb\vismaz\helpers\Money;
 use justinholtweb\vismaz\models\TaxTreatment;
 use justinholtweb\vismaz\Plugin;
-use yii\web\ForbiddenHttpException;
 use yii\web\Response;
 
 /**
