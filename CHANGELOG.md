@@ -34,6 +34,13 @@
   after it expired.
 - A 401 from Visma now renews the access token even when it is not near its expiry time, instead
   of retrying with the token Visma had just refused.
+- A second partial refund raised a credit note for everything refunded on the order so far, so
+  the first refund was credited in Visma twice — and retrying a failed second credit note did the
+  same. A credit note now covers only what Visma has not already credited, and retrying a credit
+  note a later one has since covered sends nothing.
+- A saved "Visma status" condition whose chosen statuses no longer exist kept no values at all, so
+  a custom source built on it silently showed every order. The chosen values are kept now: "is one
+  of" a status that no longer exists matches no order, and "is not one of" it excludes none.
 
 ### Changed
 - A refused token request now reads "Visma refused to issue an access token (…)". The old "Visma

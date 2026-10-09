@@ -5,9 +5,11 @@ namespace justinholtweb\vismaz\services;
 use Craft;
 use craft\commerce\elements\Order;
 use craft\commerce\models\LineItem;
+use craft\db\Query;
 use DateTime;
 use DateTimeImmutable;
 use DateTimeInterface;
+use justinholtweb\vismaz\db\Table;
 use justinholtweb\vismaz\helpers\Bas;
 use justinholtweb\vismaz\helpers\Money;
 use justinholtweb\vismaz\models\Document;
@@ -111,14 +113,17 @@ class Documents extends Component
     }
 
     /**
-     * One order → a credit note, for the amount actually refunded.
+     * One order → a credit note, for what has been refunded and is not yet credited in Visma.
      *
      * Keyed on the refund transactions rather than the order, so a second partial refund is a
-     * second credit note and a retry of the first is not.
+     * second credit note and a retry of the first is not. The amount is the refunds less the
+     * credit notes already in Visma: a second credit note for the whole refunded total would
+     * credit the first refund twice. Null when there is nothing left to credit — which is also
+     * what a retry of a credit note since superseded by a later one gets.
      */
     public function buildCreditNote(Order $order, bool $resolveRemote = true): ?Document
     {
-        $refunded = $this->refundedAmount($order);
+        $refunded = Money::round($this->refundedAmount($order) - $this->creditedAmount($order));
 
         if ($refunded <= 0) {
             return null;
@@ -492,6 +497,25 @@ class Documents extends Component
         }
 
         return Money::round($total);
+    }
+
+    /**
+     * What Visma already holds as credit notes for an order: the gross of every credit note sent
+     * (or sent and booked at a different total — it is in Visma either way). A failed or pending
+     * one is not in Visma, so it is not counted.
+     */
+    public function creditedAmount(Order $order): float
+    {
+        $total = (new Query())
+            ->from(Table::DOCUMENTS)
+            ->where([
+                'type' => Document::TYPE_CREDITNOTE,
+                'status' => [Sync::STATUS_SENT, Sync::STATUS_MISMATCHED],
+            ])
+            ->andWhere(['like', 'sourceKey', 'refund:' . (int)$order->id . ':%', false])
+            ->sum('[[grossTotal]]');
+
+        return Money::round(abs((float)$total));
     }
 
     /**

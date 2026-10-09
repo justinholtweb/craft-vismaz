@@ -361,7 +361,13 @@ class Sync extends Component
         $document = $plugin->getDocuments()->buildCreditNote($order);
 
         if ($document === null) {
-            return ['status' => self::STATUS_SKIPPED, 'document' => null, 'message' => Craft::t('vismaz', 'Nothing has been refunded on this order.')];
+            // Refunds there, but every one already credited — a retry of a superseded credit note
+            // lands here too.
+            $message = $plugin->getDocuments()->refundedAmount($order) > 0
+                ? Craft::t('vismaz', 'Every refund on this order is already credited in Visma.')
+                : Craft::t('vismaz', 'Nothing has been refunded on this order.');
+
+            return ['status' => self::STATUS_SKIPPED, 'document' => null, 'message' => $message];
         }
 
         return $this->push($document);

@@ -34,6 +34,7 @@ return [
     'Mismatched' => 'Avvikande',
     'Visma booked {theirs} but {ours} was sent — check the document before relying on these books.' => 'Visma bokförde {theirs} men {ours} skickades — kontrollera verifikatet innan du litar på bokföringen.',
     'Already in Visma as {number}.' => 'Finns redan i Visma som {number}.',
+    'Every refund on this order is already credited in Visma.' => 'Alla återbetalningar på ordern är redan krediterade i Visma.',
     'Disconnected from Visma.' => 'Frånkopplad från Visma.',
     'Connected to {company}.' => 'Ansluten till {company}.',
     'Vismaz is not connected to Visma.' => 'Vismaz är inte anslutet till Visma.',

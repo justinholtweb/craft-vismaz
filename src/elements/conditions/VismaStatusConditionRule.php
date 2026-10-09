@@ -41,14 +41,35 @@ class VismaStatusConditionRule extends BaseMultiSelectConditionRule implements E
     }
 
     /**
-     * Only the statuses Vismaz knows: a hand-edited or stale condition cannot smuggle anything
-     * else into the query.
+     * Keeps every value that was chosen, known or not. A status a later release renames or drops
+     * must stay on the saved rule: stripping it here would turn "is one of <that status>" into an
+     * empty rule — no filter at all — and re-saving the source would lose the choice for good.
+     * Only {@see knownValues()} ever reach the query.
      *
      * @param string|string[] $values
      */
     public function setValues(array|string $values): void
     {
-        parent::setValues(array_values(array_intersect((array)$values, array_keys(OrderStatus::options()))));
+        $clean = [];
+
+        foreach ((array)$values as $value) {
+            if (is_scalar($value) && (string)$value !== '') {
+                $clean[] = (string)$value;
+            }
+        }
+
+        parent::setValues(array_values(array_unique($clean)));
+    }
+
+    /**
+     * The chosen values Vismaz knows. A hand-edited or stale condition cannot smuggle anything
+     * else into the query.
+     *
+     * @return string[]
+     */
+    private function knownValues(): array
+    {
+        return array_values(array_intersect($this->getValues(), array_keys(OrderStatus::options())));
     }
 
     /**
@@ -70,20 +91,32 @@ class VismaStatusConditionRule extends BaseMultiSelectConditionRule implements E
      */
     public function modifyQuery(ElementQueryInterface $query): void
     {
-        $values = $this->getValues();
+        // Nothing chosen is no filter, as everywhere in Craft.
+        if ($this->getValues() === []) {
+            return;
+        }
 
-        if ($values === []) {
+        $known = $this->knownValues();
+        $notIn = $this->operator === self::OPERATOR_NOT_IN;
+
+        // Chosen, but none of it is a status any more: "is one of" matches nothing, rather than
+        // widening a saved source to every order; "is not one of" excludes nothing.
+        if ($known === []) {
+            if (!$notIn) {
+                $query->andWhere('0=1');
+            }
+
             return;
         }
 
         $statuses = Plugin::getInstance()->getOrderStatus();
         $condition = ['or'];
 
-        foreach ($values as $status) {
+        foreach ($known as $status) {
             $condition[] = $statuses->condition($status);
         }
 
-        $query->andWhere($this->operator === self::OPERATOR_NOT_IN ? ['not', $condition] : $condition);
+        $query->andWhere($notIn ? ['not', $condition] : $condition);
     }
 
     /**
@@ -91,12 +124,19 @@ class VismaStatusConditionRule extends BaseMultiSelectConditionRule implements E
      */
     public function matchElement(ElementInterface $element): bool
     {
-        if (!$element instanceof Order || !$element->id) {
-            return $this->matchValue(OrderStatus::NONE);
+        if ($this->getValues() === []) {
+            return true;
         }
 
-        $status = Plugin::getInstance()->getOrderStatus()->orderStatuses([$element->id])[$element->id] ?? OrderStatus::NONE;
+        if (!$element instanceof Order || !$element->id) {
+            $status = OrderStatus::NONE;
+        } else {
+            $status = Plugin::getInstance()->getOrderStatus()->orderStatuses([$element->id])[$element->id] ?? OrderStatus::NONE;
+        }
 
-        return $this->matchValue($status);
+        // The same known-values set modifyQuery() uses, so a stale value cannot make the two disagree.
+        $in = in_array($status, $this->knownValues(), true);
+
+        return $this->operator === self::OPERATOR_NOT_IN ? !$in : $in;
     }
 }

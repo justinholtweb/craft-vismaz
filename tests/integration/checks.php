@@ -1895,6 +1895,222 @@ try {
             ?: 'schema ' . $plugin->schemaVersion;
     });
 
+    // ---------------------------------------------------------------------
+    section('Retries resend only the record that failed');
+
+    // A retry of a credit note or a payment must send that record and nothing else: never the
+    // order's invoice again (craft-waver's console retry re-sent the whole sale), and never a
+    // credit for a refund Visma already holds. Every POST is counted from the mock's history.
+    // Other unsent rows in the shared harness are parked for the duration, so the console
+    // retries (`retryFailed()`, `retryUnsent()`) can only reach this order's rows.
+    $retrySettingsBefore = ['syncCustomers' => $live->syncCustomers, 'useAggregateCustomer' => $live->useAggregateCustomer, 'syncRefunds' => $live->syncRefunds];
+    $live->syncCustomers = false;
+    $live->useAggregateCustomer = false;
+    $live->syncRefunds = true;
+
+    $invoiceGuidR = 'a1b2c3d4-0000-4000-8000-00000000a0r1';
+    $creditGuid = static fn(int $n): string => sprintf('c1c1c1c1-0000-4000-8000-%012d', $n);
+    $fresh = static fn(Order $o): Order => Order::find()->id($o->id)->status(null)->one();
+    $postsSince = static function(int $before): array {
+        $posts = [];
+
+        foreach (array_slice($GLOBALS['vzHistory'], $before) as $entry) {
+            /** @var Psr\Http\Message\RequestInterface $request */
+            $request = $entry['request'];
+
+            if ($request->getMethod() !== 'POST') {
+                continue;
+            }
+
+            $body = json_decode((string)$request->getBody(), true) ?: [];
+            $path = $request->getUri()->getPath();
+            $kind = match (true) {
+                str_ends_with($path, '/payments') => 'payment',
+                str_ends_with($path, '/customerinvoices') && ($body['IsCreditInvoice'] ?? false) === true => 'creditnote',
+                str_ends_with($path, '/customerinvoices') => 'invoice',
+                default => $path,
+            };
+            $posts[] = ['kind' => $kind, 'path' => $path, 'body' => $body];
+        }
+
+        return $posts;
+    };
+    $kinds = static fn(array $posts): array => array_count_values(array_column($posts, 'kind'));
+    $rowsGross = static fn(array $body): float => round(array_sum(array_map(
+        static fn(array $r): float => (float)($r['UnitPrice'] ?? 0) * (float)($r['Quantity'] ?? 1),
+        $body['Rows'] ?? []
+    )), 2);
+    // Park every other unsent row; give back a closure that restores them.
+    $park = static function(int $orderId): callable {
+        $db = Craft::$app->getDb();
+        $docs = (new craft\db\Query())->select(['id', 'status'])->from(Table::DOCUMENTS)
+            ->where(['status' => ['failed', 'pending']])
+            ->andWhere(['not', ['like', 'sourceKey', 'refund:' . $orderId . ':%', false]])
+            ->andWhere(['not', ['sourceKey' => 'order:' . $orderId]])
+            ->all();
+        $pays = (new craft\db\Query())->select(['id', 'status'])->from(Table::PAYMENTS)
+            ->where(['status' => ['failed', 'waiting', 'pending']])
+            ->andWhere(['not', ['orderId' => $orderId]])
+            ->all();
+
+        foreach ($docs as $row) {
+            $db->createCommand()->update(Table::DOCUMENTS, ['status' => 'vz-parked'], ['id' => $row['id']], [], false)->execute();
+        }
+
+        foreach ($pays as $row) {
+            $db->createCommand()->update(Table::PAYMENTS, ['status' => 'vz-parked'], ['id' => $row['id']], [], false)->execute();
+        }
+
+        return static function() use ($db, $docs, $pays): void {
+            foreach ($docs as $row) {
+                $db->createCommand()->update(Table::DOCUMENTS, ['status' => $row['status']], ['id' => $row['id']], [], false)->execute();
+            }
+
+            foreach ($pays as $row) {
+                $db->createCommand()->update(Table::PAYMENTS, ['status' => $row['status']], ['id' => $row['id']], [], false)->execute();
+            }
+        };
+    };
+
+    $orderR = $paidOrder($productA);
+    $txR = $payOrder($orderR, (float)$orderR->getTotalPrice());
+    dropPaymentJobs((int)$txR->id);
+    // The invoice is already in Visma — the thing no retry below may post again.
+    $plugin->getSync()->record($plugin->getDocuments()->buildInvoice($orderR, false), Sync::STATUS_SENT, $invoiceGuidR);
+    $refundR1 = $payOrder($fresh($orderR), 30.0, 'refund');
+    $unpark = $park((int)$orderR->id);
+
+    try {
+        check('a credit note Visma refused is recorded as failed', function() use ($plugin, $mock, $reply, $fresh, $orderR) {
+            $mock->append($reply(503, ['Message' => 'Service unavailable']));
+            $result = $plugin->getSync()->syncRefund($fresh($orderR));
+
+            return ($result['status'] === 'failed' && $result['document']?->type === 'creditnote') ?: json_encode([$result['status'], $result['message']]);
+        });
+
+        $k1 = Documents::creditNoteKey($fresh($orderR));
+
+        check('the console retry resends that credit note once and never the invoice', function() use ($plugin, $mock, $reply, $postsSince, $kinds, $rowsGross, $creditGuid, $k1) {
+            $mock->append($reply(201, ['Id' => $creditGuid(1), 'InvoiceNumber' => 9001, 'TotalAmount' => 30.0]));
+            $before = count($GLOBALS['vzHistory']);
+            $result = $plugin->getSync()->retryFailed();
+            $posts = $postsSince($before);
+            $row = $plugin->getSync()->findRecord('creditnote', $k1);
+
+            return ($kinds($posts) === ['creditnote' => 1]
+                && $result['sent'] === 1
+                && $row?->status === 'sent'
+                && $rowsGross($posts[0]['body']) <= 30.0)
+                ?: json_encode([$kinds($posts), $result, $row?->status]);
+        });
+
+        check('retrying it again from the document screen sends nothing', function() use ($plugin, $postsSince, $k1) {
+            $record = $plugin->getSync()->findRecord('creditnote', $k1);
+            $before = count($GLOBALS['vzHistory']);
+            $document = $plugin->getSync()->rebuild($record);
+            $result = $document ? $plugin->getSync()->push($document) : ['status' => 'not rebuilt'];
+
+            return ($postsSince($before) === [] && in_array($result['status'], ['skipped', 'not rebuilt'], true)) ?: json_encode($result['status']);
+        });
+
+        $refundR2 = $payOrder($fresh($orderR), 20.0, 'refund');
+
+        check('a second partial refund credits only the new 20, not the 50 refunded in all', function() use ($plugin, $mock, $reply, $fresh, $orderR, $postsSince, $kinds, $creditGuid) {
+            $mock->append($reply(201, ['Id' => $creditGuid(2), 'InvoiceNumber' => 9002, 'TotalAmount' => 20.0]));
+            $before = count($GLOBALS['vzHistory']);
+            $result = $plugin->getSync()->syncRefund($fresh($orderR));
+            $posts = $postsSince($before);
+
+            return ($kinds($posts) === ['creditnote' => 1]
+                && $result['status'] === 'sent'
+                && abs((float)$result['document']->grossTotal - 20.0) < 0.005
+                && abs($plugin->getDocuments()->creditedAmount($fresh($orderR)) - 50.0) < 0.005)
+                ?: json_encode([$kinds($posts), $result['status'], $result['message'], $result['document']?->grossTotal]);
+        });
+
+        check('…and once everything is credited, sending refunds again says so and posts nothing', function() use ($plugin, $fresh, $orderR, $postsSince) {
+            $before = count($GLOBALS['vzHistory']);
+            $result = $plugin->getSync()->syncRefund($fresh($orderR));
+
+            return ($postsSince($before) === [] && $result['status'] === 'skipped' && str_contains((string)$result['message'], 'already credited'))
+                ?: json_encode([$result['status'], $result['message']]);
+        });
+
+        // A failed credit note superseded by a later one: the retry has nothing left to send.
+        $refundR3 = $payOrder($fresh($orderR), 10.0, 'refund');
+
+        check('a third refund fails to send…', function() use ($plugin, $mock, $reply, $fresh, $orderR) {
+            $mock->append($reply(503, ['Message' => 'Service unavailable']));
+
+            return $plugin->getSync()->syncRefund($fresh($orderR))['status'] === 'failed';
+        });
+
+        $k3 = Documents::creditNoteKey($fresh($orderR));
+        $refundR4 = $payOrder($fresh($orderR), 5.0, 'refund');
+
+        check('…a fourth refund sends a credit note for both (15)…', function() use ($plugin, $mock, $reply, $fresh, $orderR, $creditGuid) {
+            $mock->append($reply(201, ['Id' => $creditGuid(4), 'InvoiceNumber' => 9004, 'TotalAmount' => 15.0]));
+            $result = $plugin->getSync()->syncRefund($fresh($orderR));
+
+            return ($result['status'] === 'sent' && abs((float)$result['document']->grossTotal - 15.0) < 0.005) ?: json_encode([$result['status'], $result['document']?->grossTotal]);
+        });
+
+        check('…so retrying the failed third posts nothing, and Visma holds exactly what was refunded', function() use ($plugin, $fresh, $orderR, $postsSince, $k3) {
+            $before = count($GLOBALS['vzHistory']);
+            $plugin->getSync()->retryFailed();
+            $rebuilt = $plugin->getSync()->rebuild($plugin->getSync()->findRecord('creditnote', $k3));
+            $order = $fresh($orderR);
+            $documents = $plugin->getDocuments();
+
+            return ($postsSince($before) === []
+                && $rebuilt === null
+                && abs($documents->creditedAmount($order) - $documents->refundedAmount($order)) < 0.005
+                && abs($documents->refundedAmount($order) - 65.0) < 0.005)
+                ?: json_encode([count($postsSince($before)), $rebuilt?->sourceKey, $documents->creditedAmount($order), $documents->refundedAmount($order)]);
+        });
+
+        // Payments: fail one, then retry it by every path.
+        $remainingR = (float)$orderR->getTotalPrice();
+
+        check('a payment Visma refused is recorded as failed', function() use ($payments, $mock, $reply, $txR, $invoiceGuidR, $remainingR) {
+            $mock->append($reply(200, ['Id' => $invoiceGuidR, 'RemainingAmountInvoiceCurrency' => $remainingR]));
+            $mock->append($reply(503, ['Message' => 'Service unavailable']));
+
+            return $payments->register($txR)['status'] === 'failed';
+        });
+
+        check('the console payment retry posts that payment once and never the invoice', function() use ($payments, $mock, $reply, $postsSince, $kinds, $txR, $invoiceGuidR, $remainingR) {
+            $mock->append($reply(200, ['Id' => $invoiceGuidR, 'RemainingAmountInvoiceCurrency' => $remainingR]));
+            $mock->append($reply(201, ['PaymentAmount' => $remainingR]));
+            $before = count($GLOBALS['vzHistory']);
+            $result = $payments->retryUnsent();
+            $posts = $postsSince($before);
+
+            return ($kinds($posts) === ['payment' => 1]
+                && $posts[0]['path'] === "/v2/customerinvoices/$invoiceGuidR/payments"
+                && $result['attempted'] === 1
+                && $payments->findByTransactionId((int)$txR->id)?->status === 'sent')
+                ?: json_encode([$kinds($posts), $result]);
+        });
+
+        check('the queue job, the order panel and the console then send nothing at all', function() use ($payments, $plugin, $fresh, $orderR, $postsSince, $txR) {
+            $before = count($GLOBALS['vzHistory']);
+            (new \justinholtweb\vismaz\jobs\RegisterPaymentJob(['transactionId' => (int)$txR->id]))->execute(Craft::$app->getQueue());
+            $panel = $payments->registerForOrder($fresh($orderR));
+            $console = $payments->retryUnsent();
+            $docs = $plugin->getSync()->retryFailed();
+
+            return ($postsSince($before) === [] && $panel['sent'] === 0 && $console['attempted'] === 0 && $docs['sent'] === 0)
+                ?: json_encode([count($postsSince($before)), $panel, $console, $docs]);
+        });
+    } finally {
+        $unpark();
+
+        foreach ($retrySettingsBefore as $key => $value) {
+            $live->$key = $value;
+        }
+    }
+
     check('every queued response was consumed — nothing asserted against a stale mock', fn() => $mock->count() === 0 ?: $mock->count() . ' left');
 } finally {
     // -------------------------------------------------------------------------

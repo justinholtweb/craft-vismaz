@@ -188,13 +188,76 @@ check('matchElement agrees with the query for every fixture', function() use ($m
     return $wrong === [] ?: implode(', ', $wrong);
 });
 
-check('unknown values are dropped on the way in, and the config round-trips', function() use ($makeRule) {
+check('stale values are kept on the rule and survive a config round-trip', function() use ($makeRule) {
     $rule = $makeRule([OrderStatus::FAILED, 'drop table', 'bogus']);
     $config = $rule->getConfig();
     $again = Craft::$app->getConditions()->createConditionRule($config);
+    $want = [OrderStatus::FAILED, 'drop table', 'bogus'];
 
-    return $rule->getValues() === [OrderStatus::FAILED] && $again->getValues() === [OrderStatus::FAILED] && $rule->validate(['values'])
+    return $rule->getValues() === $want && $again->getValues() === $want && $rule->validate(['values'])
         ?: json_encode($config);
+});
+
+check('…but only known values reach the query', function() use ($makeRule, $ids) {
+    $stale = Order::find()->id($ids)->status(null);
+    $makeRule([OrderStatus::FAILED, 'drop table', 'bogus'])->modifyQuery($stale);
+    $plain = Order::find()->id($ids)->status(null);
+    $makeRule([OrderStatus::FAILED])->modifyQuery($plain);
+    $a = array_map('intval', $stale->ids());
+    $b = array_map('intval', $plain->ids());
+    sort($a);
+    sort($b);
+
+    return ($a === $b && $a !== []) ?: json_encode([$a, $b]);
+});
+
+check('a saved rule whose only value is stale: “is one of” matches no order at all', function() use ($makeRule, $fixtures) {
+    $config = $makeRule(['bogus'])->getConfig();
+    $rule = Craft::$app->getConditions()->createConditionRule($config);
+    $query = Order::find()->status(null);
+    $rule->modifyQuery($query);
+    $count = (int)$query->count();
+    $matched = array_filter($fixtures, static fn(Order $o) => $rule->matchElement($o));
+
+    return ($rule->getValues() === ['bogus'] && $count === 0 && $matched === [])
+        ?: json_encode([$rule->getValues(), $count, array_keys($matched)]);
+});
+
+check('…and “is not one of” it excludes nothing', function() use ($makeRule, $fixtures) {
+    $rule = $makeRule(['bogus'], 'ni');
+    $query = Order::find()->status(null);
+    $rule->modifyQuery($query);
+    $base = (int)Order::find()->status(null)->count();
+    $count = (int)$query->count();
+    $unmatched = array_filter($fixtures, static fn(Order $o) => !$rule->matchElement($o));
+
+    return ($count === $base && $base > 0 && $unmatched === []) ?: json_encode([$count, $base, array_keys($unmatched)]);
+});
+
+check('an empty rule matches every element', function() use ($makeRule, $fixtures) {
+    $rule = $makeRule([]);
+    $base = (int)Order::find()->status(null)->count();
+    $query = Order::find()->status(null);
+    $rule->modifyQuery($query);
+    $unmatched = array_filter($fixtures, static fn(Order $o) => !$rule->matchElement($o));
+
+    return ((int)$query->count() === $base && $unmatched === []) ?: json_encode([(int)$query->count(), $base, array_keys($unmatched)]);
+});
+
+check('“is not one of” a known status still matches like the query, stale values or not', function() use ($makeRule, $ids, $fixtures) {
+    $rule = $makeRule([OrderStatus::SYNCED, 'bogus'], 'ni');
+    $query = Order::find()->id($ids)->status(null);
+    $rule->modifyQuery($query);
+    $got = array_map('intval', $query->ids());
+    $wrong = [];
+
+    foreach ($fixtures as $name => $order) {
+        if ($rule->matchElement($order) !== in_array((int)$order->id, $got, true)) {
+            $wrong[] = $name;
+        }
+    }
+
+    return ($wrong === [] && count($got) === count($ids) - 3) ?: json_encode([$wrong, count($got)]);
 });
 
 check('an empty rule leaves the query alone', function() use ($makeRule, $ids) {
