@@ -1,7 +1,6 @@
 # Changelog
 
-## Unreleased
-
+## 5.2.0 - 2026-10-09
 ### Added
 - Failure alerts. One email — and optionally a Slack, Teams or signed-JSON webhook — when sending
   to Visma gets into trouble, and one when it clears: orders failing to reach Visma, documents
