@@ -37,7 +37,7 @@ class SyncController extends Controller
         return array_merge(parent::options($actionID), match ($actionID) {
             'orders' => ['dryRun', 'from', 'to', 'limit'],
             'voucher' => ['dryRun', 'from', 'to'],
-            'retry' => ['limit'],
+            'retry', 'payments' => ['limit'],
             default => [],
         });
     }
@@ -196,6 +196,66 @@ class SyncController extends Controller
         ));
 
         return $result['failed'] === 0 ? ExitCode::OK : ExitCode::UNSPECIFIED_ERROR;
+    }
+
+    /**
+     * Register invoice payments that failed or are still waiting for their invoice.
+     */
+    public function actionPayments(): int
+    {
+        if (!$this->guard()) {
+            return ExitCode::CONFIG;
+        }
+
+        $result = Plugin::getInstance()->getPayments()->retryUnsent($this->limit);
+
+        $this->stdout(sprintf(
+            "%d attempted, %d in Visma, %d still waiting for an invoice, %d failing.\n",
+            $result['attempted'],
+            $result['sent'],
+            $result['waiting'],
+            $result['failed']
+        ));
+
+        return $result['failed'] === 0 ? ExitCode::OK : ExitCode::UNSPECIFIED_ERROR;
+    }
+
+    /**
+     * List the bank accounts set up in Visma — what a gateway's “Visma bank account” setting
+     * takes, as an ID or a ledger account number.
+     */
+    public function actionBankAccounts(): int
+    {
+        if (!$this->guard()) {
+            return ExitCode::CONFIG;
+        }
+
+        try {
+            $accounts = Plugin::getInstance()->getPayments()->getBankAccounts(true);
+        } catch (Throwable $e) {
+            $this->stderr($e->getMessage() . "\n", Console::FG_RED);
+
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        if ($accounts === []) {
+            $this->stdout("No bank accounts are set up in Visma.\n", Console::FG_GREY);
+
+            return ExitCode::OK;
+        }
+
+        foreach ($accounts as $account) {
+            $this->stdout(sprintf(
+                "  %-6s %-36s %-5s %s%s\n",
+                (string)($account['LedgerAccountNumber'] ?? ''),
+                (string)($account['Id'] ?? ''),
+                (string)($account['CurrencyCode'] ?? ''),
+                (string)($account['Name'] ?? ''),
+                ($account['IsActive'] ?? true) === false ? ' (inactive)' : ''
+            ));
+        }
+
+        return ExitCode::OK;
     }
 
     /**

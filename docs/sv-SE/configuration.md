@@ -13,6 +13,9 @@ samlingsverifikat per period — dagligen, veckovis eller månadsvis — med rad
 Båda går genom samma byggare, så momsbedömningen, avrundningen och kontona avgörs likadant oavsett
 läge. Det enda som skiljer är formen på det som når Visma.
 
+I fakturaläget registrerar **Registrera betalningar mot fakturor** (på som standard) varje
+Commerce-betalning mot dess faktura i Visma — se [Betalningar](usage#betalningar).
+
 ## Kunder
 
 En Visma-faktura behöver en kund. Två varianter stöds:
@@ -111,9 +114,28 @@ kostnad i sig snarare än en intäktsminskning. Koppla varje Commerce-gateway ti
 
 - kontot pengarna faktiskt landar på,
 - kontot avgiften bokförs på,
-- avgiften som procent och/eller fast belopp.
+- avgiften som procent och/eller fast belopp,
+- **bankkontot i Visma** som betalningarna registreras mot, i fakturaläget.
 
 En gateway utan koppling faller tillbaka på standardkontot och bokför ingen avgift.
+
+### Bankkontot i Visma
+
+Visma registrerar en fakturabetalning mot ett av **bankkontona som är upplagda i Visma**, inte
+direkt mot ett bokföringskonto. Ange antingen bankkontots bokföringskonto — `1930` — så letar
+Vismaz upp bankkontot som bokförs där, eller bankkontots ID i Visma (en GUID). En miljövariabel
+(`$STRIPE_VISMA_BANK`) fungerar för båda. Så ser du vad Visma har:
+
+```sh
+php craft vismaz/sync/bank-accounts
+```
+
+**Standardbankkonto i Visma** gäller varje gateway utan eget. Finns inget av dem gissar Vismaz
+inte: betalningen nekas, och orderpanelen och loggen säger vilken gateway som behöver ett.
+
+Före 5.1.0 sparades kopplingar gjorda i kontrollpanelen i en form som inställningarna aldrig läste
+tillbaka: varje gateway föll igenom till standardkontot, och tabellen var tom vid omladdning. 5.1.0
+läser dem som de sparades, så en koppling du gjorde då gäller nu — kontrollera dem.
 
 ## Logg
 

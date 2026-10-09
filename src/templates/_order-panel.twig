@@ -57,6 +57,39 @@
         <p class="light" style="margin-top:8px;">{{ 'Not yet sent to Visma.'|t('vismaz') }}</p>
     {% endif %}
 
+    {% if payments|length %}
+        <table class="data fullwidth" style="margin-top:12px;">
+            <thead>
+                <tr>
+                    <th>{{ 'Payment'|t('vismaz') }}</th>
+                    <th>{{ 'Status'|t('vismaz') }}</th>
+                    <th>{{ 'Date'|t('vismaz') }}</th>
+                    <th>{{ 'Amount'|t('vismaz') }}</th>
+                    <th>{{ 'Visma reference'|t('vismaz') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for payment in payments %}
+                    <tr>
+                        <td>{{ payment.gatewayHandle ?: '—' }} <span class="light">#{{ payment.transactionId }}</span></td>
+                        <td>
+                            <span class="status {{ payment.status == 'sent' ? 'green' : (payment.status == 'failed' ? 'red' : 'orange') }}"></span>
+                            {{ payment.status|t('vismaz') }}
+                        </td>
+                        <td>{{ payment.paymentDate ?: '—' }}</td>
+                        <td>{{ craft.vismaz.money(payment.amount, payment.currency ?: 'SEK') }}</td>
+                        <td><code>{{ payment.vismaReference ?: '—' }}</code></td>
+                    </tr>
+                    {% if payment.lastError %}
+                        <tr>
+                            <td colspan="5" class="light error">{{ payment.lastError }}</td>
+                        </tr>
+                    {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+
     <div class="buttons" style="margin-top:12px;">
         <button type="button" class="btn" id="vismaz-preview-{{ order.id }}">{{ 'Preview'|t('vismaz') }}</button>
 
@@ -64,6 +97,10 @@
             <button type="button" class="btn submit" id="vismaz-push-{{ order.id }}">{{ 'Send to Visma'|t('vismaz') }}</button>
 
             <button type="button" class="btn" id="vismaz-refund-{{ order.id }}">{{ 'Credit refunds'|t('vismaz') }}</button>
+
+            {% if invoiceMode %}
+                <button type="button" class="btn" id="vismaz-payments-{{ order.id }}">{{ 'Register payments'|t('vismaz') }}</button>
+            {% endif %}
         {% endif %}
 
         <span class="spinner hidden" id="vismaz-spinner-{{ order.id }}"></span>
@@ -129,5 +166,22 @@
 
     bind('vismaz-push-' + orderId, function() { push('invoice'); });
     bind('vismaz-refund-' + orderId, function() { push('refund'); });
+
+    // Registers every payment on the order that is not yet in Visma; one already there is
+    // skipped, so a second press sends nothing twice.
+    bind('vismaz-payments-' + orderId, function() {
+        busy(true);
+
+        Craft.sendActionRequest('POST', 'vismaz/payments/register', { data: { orderId: orderId } })
+            .then(function(response) {
+                var d = response.data;
+                d.success ? Craft.cp.displayNotice(d.message) : Craft.cp.displayError(d.message);
+                setTimeout(function() { window.location.reload(); }, 800);
+            })
+            .catch(function(error) {
+                Craft.cp.displayError((error.response && error.response.data && error.response.data.message) || 'Registering payments failed.');
+            })
+            .finally(function() { busy(false); });
+    });
 })();
 {% endjs %}

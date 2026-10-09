@@ -83,6 +83,27 @@ Check the Commerce tax rules for that country.
 - Have they already been sent? An order already covered by a document is excluded from the
   unsynced list — that is what stops it being booked twice.
 
+## A payment is stuck on "waiting"
+
+The order was paid before its invoice was in Visma, which is normal — paying is what completes the
+order. It is registered as soon as the invoice is sent. If the invoice is not going to be sent
+automatically (automatic sending is off, or the order is outside the status filter), send it from
+the order panel; its payments follow. `php craft vismaz/sync/payments` re-runs everything waiting.
+
+## "No Visma bank account is mapped for the … gateway"
+
+Visma registers a payment to one of its own bank accounts, and Vismaz will not guess which. Give
+the gateway a **Visma bank account** under **Payment methods** in the settings, or set the default,
+then press **Register payments** on the order. `php craft vismaz/sync/bank-accounts` lists what
+Visma has.
+
+## "Registering … would overpay it"
+
+Visma says less is open on the invoice than the payment is for. Usually the payment is already
+there — someone marked the invoice paid in Visma, or an earlier attempt reached Visma but its
+answer never came back. Look at the invoice in Visma before doing anything; Vismaz deliberately
+does not send it.
+
 ## SIE file imports with mangled account names
 
 A SIE file is **CP437**, not UTF-8, and Vismaz writes it that way. If Å, Ä and Ö arrive mangled,

@@ -83,6 +83,7 @@ class DocumentsController extends Controller
         return $this->renderTemplate('vismaz/documents/_detail', [
             'document' => $record,
             'orderIds' => $orderIds,
+            'payments' => Plugin::getInstance()->getPayments()->getPaymentsForDocument($documentId),
             'logEntries' => Plugin::getInstance()->getLog()->find(['documentId' => $documentId], 25),
         ]);
     }

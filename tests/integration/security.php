@@ -63,7 +63,7 @@ $settingsPath = 'plugins.vismaz.settings';
 $settingsBefore = Craft::$app->getProjectConfig()->get($settingsPath);
 $envFile = $root . '/.env';
 $envBefore = file_get_contents($envFile);
-$cleanup = ['users' => []];
+$cleanup = ['users' => [], 'orders' => []];
 $statePrefix = (new ReflectionClassConstant(Auth::class, 'STATE_CACHE_PREFIX'))->getValue();
 
 Craft::$app->getPlugins()->savePluginSettings($plugin, array_merge($plugin->getSettings()->toArray(), [
@@ -76,6 +76,9 @@ register_shutdown_function(function() use (&$cleanup, $envFile, $envBefore, $set
     file_put_contents($envFile, $envBefore);
     foreach ($cleanup['users'] as $user) {
         Craft::$app->getElements()->deleteElement($user, true);
+    }
+    foreach ($cleanup['orders'] as $order) {
+        Craft::$app->getElements()->deleteElement($order, true);
     }
 
     $restore = sys_get_temp_dir() . '/vismaz-restore-' . bin2hex(random_bytes(4)) . '.php';
@@ -238,6 +241,61 @@ check('the subnav offers Connection to whoever can use it', function() use ($plu
     Craft::$app->getUser()->setIdentity(null);
 
     return in_array('connection', $managerNav, true) && !in_array('connection', $bystanderNav, true) ?: json_encode([$managerNav, $bystanderNav]);
+});
+
+echo "\nRegistering payments\n";
+
+// The order panel's “Register payments” and the log's re-run post here. It sends money records to
+// the merchant's books, so it takes the same permission as sending an order.
+$pusher = $user('pusher', ['accesscp', 'accessplugin-vismaz', 'vismaz-viewdocuments', 'vismaz-pushdocuments']);
+[$pusherHttp, $pusherCsrf] = client($pusher->username, $password);
+$paymentOrder = new craft\commerce\elements\Order();
+$paymentOrder->storeId = craft\commerce\Plugin::getInstance()->getStores()->getPrimaryStore()->id;
+$paymentOrder->number = craft\commerce\Plugin::getInstance()->getCarts()->generateCartNumber();
+Craft::$app->getElements()->saveElement($paymentOrder, false);
+$cleanup['orders'][] = $paymentOrder;
+
+$register = static fn(Client $http, callable $csrf, array $params = []): Psr\Http\Message\ResponseInterface => $http->post('index.php?p=admin/actions/vismaz/payments/register', [
+    'headers' => ['Accept' => 'application/json'],
+    'form_params' => $params + ['orderId' => $paymentOrder->id, 'CRAFT_CSRF_TOKEN' => $csrf()],
+]);
+
+check('someone who can only view documents cannot register payments', function() use ($register, $bystanderHttp, $bystanderCsrf) {
+    $status = $register($bystanderHttp, $bystanderCsrf)->getStatusCode();
+
+    return $status === 403 ?: "status $status";
+});
+
+check('…nor can the connection manager', function() use ($register, $managerHttp, $managerCsrf) {
+    $status = $register($managerHttp, $managerCsrf)->getStatusCode();
+
+    return $status === 403 ?: "status $status";
+});
+
+check('it takes a POST', function() use ($pusherHttp, $paymentOrder) {
+    $status = $pusherHttp->get('index.php?p=admin/actions/vismaz/payments/register&orderId=' . $paymentOrder->id, ['headers' => ['Accept' => 'application/json']])->getStatusCode();
+
+    return in_array($status, [400, 405], true) ?: "status $status";
+});
+
+check('…with a CSRF token', function() use ($pusherHttp, $paymentOrder) {
+    $status = $pusherHttp->post('index.php?p=admin/actions/vismaz/payments/register', ['headers' => ['Accept' => 'application/json'], 'form_params' => ['orderId' => $paymentOrder->id]])->getStatusCode();
+
+    return $status === 400 ?: "status $status";
+});
+
+check('an order that does not exist is a 404', function() use ($register, $pusherHttp, $pusherCsrf) {
+    $status = $register($pusherHttp, $pusherCsrf, ['orderId' => 999999999])->getStatusCode();
+
+    return $status === 404 ?: "status $status";
+});
+
+check('someone who can send orders can register payments', function() use ($register, $pusherHttp, $pusherCsrf) {
+    // The positive control: an order with no payments answers that, rather than a refusal.
+    $response = $register($pusherHttp, $pusherCsrf);
+    $body = json_decode((string)$response->getBody(), true);
+
+    return $response->getStatusCode() === 200 && ($body['success'] ?? null) === true ?: 'status ' . $response->getStatusCode() . ' ' . substr((string)$response->getBody(), 0, 300);
 });
 
 echo "\n$passed passed, $failed failed\n";

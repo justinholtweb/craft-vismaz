@@ -6,6 +6,8 @@ use Craft;
 use craft\base\Model;
 use craft\base\Plugin as BasePlugin;
 use craft\commerce\elements\Order;
+use craft\commerce\events\TransactionEvent;
+use craft\commerce\services\Transactions;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
 use craft\services\UserPermissions;
@@ -20,6 +22,7 @@ use justinholtweb\vismaz\services\Auth;
 use justinholtweb\vismaz\services\Customers;
 use justinholtweb\vismaz\services\Documents;
 use justinholtweb\vismaz\services\Log;
+use justinholtweb\vismaz\services\Payments;
 use justinholtweb\vismaz\services\Sie;
 use justinholtweb\vismaz\services\Sync;
 use justinholtweb\vismaz\services\Tax;
@@ -39,6 +42,7 @@ use yii\base\Event;
  * @property-read Articles $articles
  * @property-read Sie $sie
  * @property-read Log $log
+ * @property-read Payments $payments
  * @method Settings getSettings()
  */
 class Plugin extends BasePlugin
@@ -52,7 +56,7 @@ class Plugin extends BasePlugin
 
     public const HANDLE = 'vismaz';
 
-    public string $schemaVersion = '5.0.0';
+    public string $schemaVersion = '5.1.0';
     public bool $hasCpSettings = true;
     public bool $hasCpSection = true;
 
@@ -69,6 +73,7 @@ class Plugin extends BasePlugin
                 'articles' => ['class' => Articles::class],
                 'sie' => ['class' => Sie::class],
                 'log' => ['class' => Log::class],
+                'payments' => ['class' => Payments::class],
             ],
         ];
     }
@@ -89,6 +94,7 @@ class Plugin extends BasePlugin
 
         $this->_registerOrderEditPanel();
         $this->_registerOrderCompletion();
+        $this->_registerPayments();
     }
 
     public static function commerceIsReady(): bool
@@ -140,6 +146,11 @@ class Plugin extends BasePlugin
     public function getLog(): Log
     {
         return $this->get('log');
+    }
+
+    public function getPayments(): Payments
+    {
+        return $this->get('payments');
     }
 
     protected function createSettingsModel(): ?Model
@@ -296,6 +307,8 @@ class Plugin extends BasePlugin
             return Craft::$app->getView()->renderTemplate('vismaz/_order-panel', [
                 'order' => $order,
                 'documents' => $this->getSync()->getDocumentsForOrder($order->id),
+                'payments' => $this->getPayments()->getPaymentsForOrder($order->id),
+                'invoiceMode' => $this->getSettings()->documentMode === Settings::MODE_INVOICE,
                 'treatment' => $treatment,
                 'connected' => $this->getAuth()->isConnected(),
                 'canPush' => Craft::$app->getUser()->checkPermission('vismaz-pushDocuments'),
@@ -332,6 +345,29 @@ class Plugin extends BasePlugin
                 } catch (Throwable $e) {
                     // Never let a bookkeeping integration break a checkout.
                     Craft::error('Vismaz could not queue order ' . $order->id . ': ' . $e->getMessage(), 'vismaz');
+                }
+            }
+        );
+    }
+
+    /**
+     * Queue a payment registration when Commerce records money received.
+     *
+     * `EVENT_AFTER_SAVE_TRANSACTION` rather than `Order::EVENT_AFTER_ORDER_PAID`, because the
+     * latter fires once, when the order is paid *in full* — a partial payment, or the second half
+     * of a split one, would never be registered. Queued, like the push, so nothing here can reach
+     * the customer paying.
+     */
+    private function _registerPayments(): void
+    {
+        Event::on(
+            Transactions::class,
+            Transactions::EVENT_AFTER_SAVE_TRANSACTION,
+            static function(TransactionEvent $event) {
+                try {
+                    Plugin::getInstance()->getPayments()->queueTransaction($event->transaction);
+                } catch (Throwable $e) {
+                    Craft::error('Vismaz could not queue payment ' . $event->transaction->id . ': ' . $e->getMessage(), 'vismaz');
                 }
             }
         );

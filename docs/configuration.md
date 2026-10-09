@@ -13,6 +13,9 @@ a periodic summary journal — daily, weekly or monthly — with lines grouped b
 Both go through the same builder, so the tax treatment, the rounding and the accounts are decided
 identically either way. Only the shape of what reaches Visma differs.
 
+In invoice mode, **Register payments against invoices** (on by default) registers each Commerce
+payment against its invoice in Visma — see [Payments](usage#payments).
+
 ## Customers
 
 A Visma invoice needs a customer. Two shapes are supported:
@@ -110,9 +113,29 @@ cost posting in its own right rather than a discount on revenue. Map each Commer
 
 - the account the money actually lands in,
 - the account its fee is booked to,
-- the fee as a percentage and/or a fixed amount.
+- the fee as a percentage and/or a fixed amount,
+- the **Visma bank account** its payments are registered to, in invoice mode.
 
 A gateway with no mapping falls back to the default settlement account and books no fee.
+
+### The Visma bank account
+
+Visma registers an invoice payment to one of the **bank accounts set up in Visma**, not to a ledger
+account directly. Give it either the bank account's ledger account number — `1930` — and Vismaz
+looks up the bank account that books to it, or the bank account's Visma ID (a GUID). An environment
+variable (`$STRIPE_VISMA_BANK`) works for either. To see what Visma has:
+
+```sh
+php craft vismaz/sync/bank-accounts
+```
+
+**Default Visma bank account** covers every gateway without one of its own. With neither, a
+payment is not guessed onto some account: it is refused, and the order panel and the log say which
+gateway needs one.
+
+Before 5.1.0, mappings made in the CP were saved in a shape the settings never read back: every
+gateway fell through to the default settlement account, and the table showed empty on reload. 5.1.0
+reads them as saved, so a mapping you made then now takes effect — check them.
 
 ## Log
 

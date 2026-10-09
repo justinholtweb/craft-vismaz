@@ -72,6 +72,40 @@
         <pre style="max-height:400px;overflow:auto;background:#f7f7f9;padding:10px;border-radius:4px;"><code>{{ document.response }}</code></pre>
     {% endif %}
 
+    {% if payments|length %}
+        <h2 style="margin-top:24px;">{{ 'Payments registered'|t('vismaz') }}</h2>
+        <table class="data fullwidth">
+            <thead>
+                <tr>
+                    <th>{{ 'Transaction'|t('vismaz') }}</th>
+                    <th>{{ 'Status'|t('vismaz') }}</th>
+                    <th>{{ 'Date'|t('vismaz') }}</th>
+                    <th>{{ 'Amount'|t('vismaz') }}</th>
+                    <th>{{ 'Visma reference'|t('vismaz') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for payment in payments %}
+                    <tr>
+                        <td>#{{ payment.transactionId }} <span class="light">{{ payment.gatewayHandle }}</span></td>
+                        <td>
+                            <span class="status {{ payment.status == 'sent' ? 'green' : (payment.status == 'failed' ? 'red' : 'orange') }}"></span>
+                            {{ payment.status|t('vismaz') }}
+                        </td>
+                        <td>{{ payment.paymentDate ?: '—' }}</td>
+                        <td>{{ craft.vismaz.money(payment.amount, payment.currency ?: 'SEK') }}</td>
+                        <td><code>{{ payment.vismaReference ?: '—' }}</code></td>
+                    </tr>
+                    {% if payment.lastError %}
+                        <tr>
+                            <td colspan="5" class="light error">{{ payment.lastError }}</td>
+                        </tr>
+                    {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+
     {% if logEntries|length %}
         <h2 style="margin-top:24px;">{{ 'Log'|t('vismaz') }}</h2>
         <table class="data fullwidth">

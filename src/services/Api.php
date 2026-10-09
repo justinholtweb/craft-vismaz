@@ -4,6 +4,7 @@ namespace justinholtweb\vismaz\services;
 
 use Craft;
 use GuzzleHttp\Client;
+use justinholtweb\vismaz\errors\ApiException;
 use justinholtweb\vismaz\Plugin;
 use Throwable;
 use yii\base\Component;
@@ -85,7 +86,8 @@ class Api extends Component
     /**
      * A single request, with auth, retries, backoff and logging.
      *
-     * @throws Exception on anything the caller cannot recover from.
+     * @throws Exception on anything the caller cannot recover from — an `ApiException`, carrying
+     * the HTTP status, once Visma has been asked.
      */
     public function request(string $method, string $path, ?array $body = null, array $query = [], array $context = []): mixed
     {
@@ -128,7 +130,7 @@ class Api extends Component
                     continue;
                 }
 
-                throw new Exception(Craft::t('vismaz', 'Could not reach Visma: {message}', ['message' => $e->getMessage()]));
+                throw new ApiException(Craft::t('vismaz', 'Could not reach Visma: {message}', ['message' => $e->getMessage()]), null, $e);
             }
 
             $status = $response->getStatusCode();
@@ -174,7 +176,7 @@ class Api extends Component
             ] + $context);
 
             if ($status >= 400) {
-                throw new Exception(self::describeError($decoded, $status));
+                throw new ApiException(self::describeError($decoded, $status), $status);
             }
 
             return $decoded;
@@ -200,6 +202,15 @@ class Api extends Component
         } catch (Throwable $e) {
             return ['ok' => false, 'company' => null, 'message' => $e->getMessage()];
         }
+    }
+
+    /**
+     * Swap the HTTP client. The integration checks hand it one built on a Guzzle `MockHandler`,
+     * because the test harness has no route to Visma; null goes back to the real one.
+     */
+    public function setClient(?Client $client): void
+    {
+        $this->client = $client;
     }
 
     private function getClient(): Client

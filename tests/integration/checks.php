@@ -75,6 +75,8 @@ $suffix = substr(md5((string)microtime(true)), 0, 6);
 $createdProducts = [];
 $createdOrders = [];
 $originalSettings = $plugin->getSettings()->toArray();
+$createdToken = false;
+$paymentSettingsBefore = null;
 
 /**
  * `craft-penny` (a sibling in this shared harness) registers an
@@ -181,6 +183,37 @@ function makeOrder(array $lines, string $countryCode = 'SE', bool $complete = tr
     }
 
     return $order;
+}
+
+/**
+ * Vismaz payment jobs waiting in Craft's queue for a transaction. Read straight from the table so a
+ * check can see what the event listener queued — and drop it at once, before a CP request elsewhere
+ * in the shared harness runs it against the real (unreachable) Visma.
+ *
+ * @return int[] queue row ids
+ */
+function queuedPaymentJobs(int $transactionId): array
+{
+    $ids = [];
+
+    foreach ((new craft\db\Query())->select(['id', 'job'])->from('{{%queue}}')->all() as $row) {
+        $job = is_resource($row['job']) ? stream_get_contents($row['job']) : (string)$row['job'];
+
+        if (str_contains($job, 'RegisterPaymentJob') && str_contains($job, 's:13:"transactionId";i:' . $transactionId . ';')) {
+            $ids[] = (int)$row['id'];
+        }
+    }
+
+    return $ids;
+}
+
+function dropPaymentJobs(int $transactionId): void
+{
+    $ids = queuedPaymentJobs($transactionId);
+
+    if ($ids) {
+        Craft::$app->getDb()->createCommand()->delete('{{%queue}}', ['id' => $ids])->execute();
+    }
 }
 
 try {
@@ -1412,6 +1445,457 @@ try {
 
         return true;
     });
+    // ---------------------------------------------------------------------
+    section('Invoice payments');
+
+    // Visma is mocked: a Guzzle MockHandler answers, and Middleware::history keeps every request
+    // so the exact body sent can be asserted. The harness has no route to Visma at all.
+    $payments = $plugin->getPayments();
+    $live = $plugin->getSettings();
+    $paymentSettingsBefore = [
+        'documentMode' => $live->documentMode,
+        'syncPayments' => $live->syncPayments,
+        'paymentAccounts' => $live->paymentAccounts,
+        'defaultBankAccountId' => $live->defaultBankAccountId,
+    ];
+
+    $bankGuid = '3f2c8a5e-1b7d-4c9a-9e0f-5a6b7c8d9e01';
+    $bankGuid1930 = '3f2c8a5e-1b7d-4c9a-9e0f-5a6b7c8d1930';
+    $invoiceGuid = 'a1b2c3d4-0000-4000-8000-00000000a001';
+    $invoiceGuid2 = 'a1b2c3d4-0000-4000-8000-00000000a002';
+
+    $gateway = Commerce::getInstance()->getGateways()->getGatewayByHandle('dummy')
+        ?? (Commerce::getInstance()->getGateways()->getAllGateways()[0] ?? null);
+
+    // Settings in memory only — never persisted.
+    $live->documentMode = Settings::MODE_INVOICE;
+    $live->syncPayments = true;
+    $live->defaultBankAccountId = '';
+    $live->paymentAccounts = [$gateway->handle => ['account' => '1580', 'bankAccountId' => $bankGuid]];
+
+    $mock = new GuzzleHttp\Handler\MockHandler();
+    // Top-level, so a global: closures read it as $GLOBALS['vzHistory'] and see it grow.
+    $vzHistory = [];
+    $stack = GuzzleHttp\HandlerStack::create($mock);
+    $stack->push(GuzzleHttp\Middleware::history($vzHistory));
+    $plugin->getApi()->setClient(new GuzzleHttp\Client(['handler' => $stack]));
+    $reply = static fn(int $status, mixed $body): GuzzleHttp\Psr7\Response => new GuzzleHttp\Psr7\Response($status, ['Content-Type' => 'application/json'], json_encode($body));
+
+    if (!$plugin->getAuth()->isConnected()) {
+        (new ReflectionMethod(\justinholtweb\vismaz\services\Auth::class, 'storeToken'))
+            ->invoke($plugin->getAuth(), ['access_token' => 'vismaz-test-token', 'refresh_token' => 'vismaz-test-refresh', 'expires_in' => 3600], null);
+        $createdToken = true;
+    }
+
+    $payOrder = static function(Order $order, float $amount, string $type = 'purchase', string $status = 'success', ?string $currency = null): craft\commerce\models\Transaction {
+        $service = Commerce::getInstance()->getTransactions();
+        $transaction = $service->createTransaction($order, null, $type);
+        $transaction->status = $status;
+        $transaction->amount = $amount;
+        $transaction->paymentAmount = $amount;
+
+        if ($currency !== null) {
+            $transaction->paymentCurrency = $currency;
+        }
+
+        $transaction->reference = 'ch_vz_' . bin2hex(random_bytes(4));
+        $transaction->message = 'Vismaz fixture';
+
+        if (!$service->saveTransaction($transaction, false)) {
+            throw new RuntimeException('Could not save the fixture transaction.');
+        }
+
+        return $service->getTransactionById($transaction->id);
+    };
+
+    $paidOrder = static function(Product $product) use ($gateway): Order {
+        $order = makeOrder([['variant' => $product->getDefaultVariant(), 'qty' => 1]], 'SE');
+        $order->gatewayId = $gateway->id;
+        Craft::$app->getElements()->saveElement($order, false);
+
+        return $order;
+    };
+
+    $orderP1 = $paidOrder($productA);
+    $total = (float)$orderP1->getTotalPrice();
+    $firstAmount = 40.0;
+
+    check('the payment fixture order has a total to split', fn() => $total > $firstAmount ?: "total $total");
+
+    check('a successful purchase or capture is a payment; an authorize or a failed one is not', function() use ($payments) {
+        $make = static function(string $type, string $status): craft\commerce\models\Transaction {
+            $t = new craft\commerce\models\Transaction();
+            $t->type = $type;
+            $t->status = $status;
+
+            return $t;
+        };
+
+        return $payments->isPayment($make('purchase', 'success'))
+            && $payments->isPayment($make('capture', 'success'))
+            && !$payments->isPayment($make('authorize', 'success'))
+            && !$payments->isPayment($make('purchase', 'failed'))
+            && !$payments->isPayment($make('refund', 'success'));
+    });
+
+    $tx1 = $payOrder($orderP1, $firstAmount);
+
+    check('saving a successful transaction queues its registration', function() use ($tx1) {
+        $jobs = queuedPaymentJobs((int)$tx1->id);
+        dropPaymentJobs((int)$tx1->id);
+
+        return count($jobs) === 1 ?: 'queued ' . count($jobs);
+    });
+
+    check('a payment before the invoice exists waits, and asks Visma nothing', function() use ($payments, $tx1) {
+        $before = count($GLOBALS['vzHistory']);
+        $result = $payments->register($tx1);
+        $row = $payments->findByTransactionId((int)$tx1->id);
+
+        return ($result['status'] === 'waiting' && $row?->status === 'waiting' && count($GLOBALS['vzHistory']) === $before)
+            ?: json_encode([$result['status'], $row?->status, count($GLOBALS['vzHistory']) - $before]);
+    });
+
+    check('…and says so in the sync log', function() use ($plugin, $orderP1) {
+        return $plugin->getLog()->count(['action' => 'payment.waiting', 'orderId' => $orderP1->id]) >= 1;
+    });
+
+    check('sending the invoice queues the payments that were waiting for it', function() use ($plugin, $mock, $reply, $orderP1, $tx1, $invoiceGuid) {
+        $document = $plugin->getDocuments()->buildInvoice($orderP1, false);
+        $mock->append($reply(201, ['Id' => $invoiceGuid, 'InvoiceNumber' => 7001, 'TotalAmount' => $document->getGrossTotal()]));
+        $result = $plugin->getSync()->push($document);
+        $jobs = queuedPaymentJobs((int)$tx1->id);
+        dropPaymentJobs((int)$tx1->id);
+
+        return ($result['status'] === 'sent' && count($jobs) === 1) ?: json_encode([$result['status'], $result['message'], count($jobs)]);
+    });
+
+    $invoiceRow = $plugin->getSync()->findRecord(Document::TYPE_INVOICE, 'order:' . $orderP1->id);
+    $invoiceGross = (float)($invoiceRow?->grossTotal ?? $total);
+
+    check('the queued job registers it with exactly the documented body', function() use ($mock, $reply, $tx1, $orderP1, $invoiceGuid, $invoiceGross, $bankGuid, $firstAmount) {
+        $before = count($GLOBALS['vzHistory']);
+        $mock->append($reply(200, ['Id' => $invoiceGuid, 'RemainingAmountInvoiceCurrency' => $invoiceGross]));
+        $mock->append($reply(201, ['PaymentDate' => '2026-10-08', 'PaymentAmount' => $firstAmount]));
+
+        (new \justinholtweb\vismaz\jobs\RegisterPaymentJob(['transactionId' => (int)$tx1->id]))->execute(Craft::$app->getQueue());
+
+        $sent = array_slice($GLOBALS['vzHistory'], $before);
+
+        if (count($sent) !== 2) {
+            return 'expected a GET and a POST, got ' . count($sent);
+        }
+
+        /** @var Psr\Http\Message\RequestInterface $get */
+        $get = $sent[0]['request'];
+        /** @var Psr\Http\Message\RequestInterface $post */
+        $post = $sent[1]['request'];
+
+        $expected = [
+            'CompanyBankAccountId' => $bankGuid,
+            'PaymentDate' => (clone $tx1->dateCreated)->setTimezone(new DateTimeZone(Craft::$app->getTimeZone()))->format('Y-m-d'),
+            'PaymentAmount' => $firstAmount,
+            'PaymentCurrency' => $tx1->paymentCurrency,
+            'PaymentType' => 1,
+            'Reference' => 'Order ' . ($orderP1->reference ?: substr((string)$orderP1->number, 0, 7)) . ' / ' . $tx1->reference,
+        ];
+
+        $checks = [
+            'get' => $get->getMethod() === 'GET' && (string)$get->getUri() === "https://eaccountingapi-sandbox.test.vismaonline.com/v2/customerinvoices/$invoiceGuid",
+            'post' => $post->getMethod() === 'POST' && (string)$post->getUri() === "https://eaccountingapi-sandbox.test.vismaonline.com/v2/customerinvoices/$invoiceGuid/payments",
+            'body' => (string)$post->getBody() === GuzzleHttp\Utils::jsonEncode($expected),
+            'auth' => str_starts_with($post->getHeaderLine('Authorization'), 'Bearer '),
+            'json' => $post->getHeaderLine('Content-Type') === 'application/json',
+        ];
+
+        return !in_array(false, $checks, true) ?: json_encode($checks) . ' sent ' . $post->getBody() . ' expected ' . json_encode($expected);
+    });
+
+    check('…and stores the Visma payment reference against the transaction', function() use ($payments, $tx1, $invoiceRow) {
+        $row = $payments->findByTransactionId((int)$tx1->id);
+
+        return ($row?->status === 'sent'
+            && $row->vismaReference === $row->reference
+            && str_contains((string)$row->reference, (string)$tx1->reference)
+            && (int)$row->documentId === (int)$invoiceRow?->id
+            && (int)$row->paymentType === 1
+            && (int)$row->attempts === 1
+            && $row->dateSent !== null)
+            ?: json_encode($row?->toArray());
+    });
+
+    check('…and it shows in the sync log against the order and the invoice', function() use ($plugin, $orderP1, $invoiceRow) {
+        $entries = $plugin->getLog()->find(['action' => 'payment.register', 'orderId' => $orderP1->id]);
+
+        return (count($entries) === 1 && (int)$entries[0]['documentId'] === (int)$invoiceRow?->id && $entries[0]['level'] === 'info')
+            ?: json_encode($entries);
+    });
+
+    check('a registered transaction is never registered twice — not by the job, the service or the order panel', function() use ($payments, $tx1, $orderP1) {
+        $before = count($GLOBALS['vzHistory']);
+        (new \justinholtweb\vismaz\jobs\RegisterPaymentJob(['transactionId' => (int)$tx1->id]))->execute(Craft::$app->getQueue());
+        $again = $payments->register($tx1);
+        $panel = $payments->registerForOrder($orderP1);
+
+        return ($again['status'] === 'skipped' && $panel['skipped'] === 1 && $panel['sent'] === 0 && count($GLOBALS['vzHistory']) === $before)
+            ?: json_encode([$again['status'], $panel, count($GLOBALS['vzHistory']) - $before]);
+    });
+
+    check('the transaction id is unique in the payments table', function() use ($tx1, $orderP1) {
+        try {
+            (new \justinholtweb\vismaz\records\PaymentRecord(['transactionId' => (int)$tx1->id, 'orderId' => (int)$orderP1->id, 'status' => 'pending']))->save(false);
+        } catch (yii\db\IntegrityException) {
+            return true;
+        }
+
+        return 'a second row for the same transaction was accepted';
+    });
+
+    $tx2 = $payOrder($orderP1, round($total - $firstAmount, 2));
+
+    check('the payment that settles the order is registered as complete', function() use ($payments, $mock, $reply, $tx2, $invoiceGuid, $total, $firstAmount, $bankGuid) {
+        // The invoice exists now, so saving the transaction queued a job; this runs it inline.
+        $queued = count(queuedPaymentJobs((int)$tx2->id));
+        dropPaymentJobs((int)$tx2->id);
+
+        $rest = round($total - $firstAmount, 2);
+        $before = count($GLOBALS['vzHistory']);
+        $mock->append($reply(200, ['Id' => $invoiceGuid, 'RemainingAmountInvoiceCurrency' => $rest]));
+        $mock->append($reply(201, ['PaymentAmount' => $rest, 'BankTransactionId' => 'b0b0b0b0-1111-4222-8333-444444444444']));
+        $result = $payments->register($tx2);
+        $sent = array_slice($GLOBALS['vzHistory'], $before);
+        $body = json_decode((string)($sent[1]['request'] ?? null)?->getBody(), true);
+        $row = $payments->findByTransactionId((int)$tx2->id);
+
+        return ($queued === 1
+            && $result['status'] === 'sent'
+            && ($body['PaymentType'] ?? null) === 2
+            && ($body['PaymentAmount'] ?? null) == $rest
+            && ($body['CompanyBankAccountId'] ?? null) === $bankGuid
+            && $row?->vismaReference === 'b0b0b0b0-1111-4222-8333-444444444444')
+            ?: json_encode([$queued, $result, $body, $row?->vismaReference]);
+    });
+
+    check('the order panel lists both payments', function() use ($payments, $orderP1) {
+        $rows = $payments->getPaymentsForOrder((int)$orderP1->id);
+
+        return (count($rows) === 2 && $rows[0]['status'] === 'sent' && $rows[1]['status'] === 'sent') ?: json_encode($rows);
+    });
+
+    // A second order, for the failure paths. One transaction, its row reset between cases.
+    $orderP2 = $paidOrder($productA);
+    $tx3 = $payOrder($orderP2, (float)$orderP2->getTotalPrice());
+    dropPaymentJobs((int)$tx3->id);
+    $plugin->getSync()->record($plugin->getDocuments()->buildInvoice($orderP2, false), Sync::STATUS_SENT, $invoiceGuid2);
+    $resetRow = static fn() => \justinholtweb\vismaz\records\PaymentRecord::deleteAll(['transactionId' => (int)$tx3->id]);
+    $remaining2 = (float)$orderP2->getTotalPrice();
+
+    check('a 5xx from Visma fails the payment as retryable, and the job throws so the queue retries it', function() use ($payments, $mock, $reply, $tx3, $invoiceGuid2, $remaining2) {
+        $mock->append($reply(200, ['Id' => $invoiceGuid2, 'RemainingAmountInvoiceCurrency' => $remaining2]));
+        $mock->append($reply(503, ['Message' => 'Service unavailable']));
+        $result = $payments->register($tx3);
+
+        $mock->append($reply(200, ['Id' => $invoiceGuid2, 'RemainingAmountInvoiceCurrency' => $remaining2]));
+        $mock->append($reply(503, ['Message' => 'Service unavailable']));
+        $job = new \justinholtweb\vismaz\jobs\RegisterPaymentJob(['transactionId' => (int)$tx3->id]);
+        $threw = false;
+
+        try {
+            $job->execute(Craft::$app->getQueue());
+        } catch (Throwable) {
+            $threw = true;
+        }
+
+        return ($result['status'] === 'failed' && $result['retryable'] && $threw && $job->canRetry(1, null) && !$job->canRetry(5, null))
+            ?: json_encode([$result['status'], $result['retryable'], $threw]);
+    });
+
+    check('…and re-running it succeeds, on the same row', function() use ($payments, $mock, $reply, $tx3, $invoiceGuid2, $remaining2) {
+        $mock->append($reply(200, ['Id' => $invoiceGuid2, 'RemainingAmountInvoiceCurrency' => $remaining2]));
+        $mock->append($reply(201, ['PaymentAmount' => $remaining2]));
+        $result = $payments->register($tx3);
+        $row = $payments->findByTransactionId((int)$tx3->id);
+
+        return ($result['status'] === 'sent' && (int)$row?->attempts === 3 && $row->lastError === null) ?: json_encode([$result, $row?->attempts]);
+    });
+
+    check('a 4xx refusal is not retried — the job records it and returns', function() use ($payments, $mock, $reply, $tx3, $invoiceGuid2, $remaining2, $resetRow) {
+        $resetRow();
+        $mock->append($reply(200, ['Id' => $invoiceGuid2, 'RemainingAmountInvoiceCurrency' => $remaining2]));
+        $mock->append($reply(400, ['ErrorMessages' => ['PaymentDate' => ['Future dates cannot be set.']]]));
+        (new \justinholtweb\vismaz\jobs\RegisterPaymentJob(['transactionId' => (int)$tx3->id]))->execute(Craft::$app->getQueue());
+        $row = $payments->findByTransactionId((int)$tx3->id);
+
+        return ($row?->status === 'failed' && str_contains((string)$row->lastError, 'Future dates')) ?: json_encode($row?->toArray());
+    });
+
+    check('a payment Visma has no room for is refused as an overpayment, without being sent', function() use ($payments, $mock, $reply, $tx3, $invoiceGuid2, $resetRow) {
+        // The guard against a POST that reached Visma but whose answer was lost.
+        $resetRow();
+        $before = count($GLOBALS['vzHistory']);
+        $mock->append($reply(200, ['Id' => $invoiceGuid2, 'RemainingAmountInvoiceCurrency' => 0]));
+        $result = $payments->register($tx3);
+
+        return ($result['status'] === 'failed' && !$result['retryable'] && str_contains((string)$result['message'], 'overpay') && count($GLOBALS['vzHistory']) - $before === 1)
+            ?: json_encode([$result, count($GLOBALS['vzHistory']) - $before]);
+    });
+
+    check('öresavrundning: half a krona over what Visma has open is still registered', function() use ($payments, $mock, $reply, $tx3, $invoiceGuid2, $remaining2, $resetRow) {
+        $resetRow();
+        $mock->append($reply(200, ['Id' => $invoiceGuid2, 'RemainingAmountInvoiceCurrency' => round($remaining2 - 0.5, 2)]));
+        $mock->append($reply(201, []));
+        $before = count($GLOBALS['vzHistory']);
+        $result = $payments->register($tx3);
+        $body = json_decode((string)($GLOBALS['vzHistory'][$before + 1]['request'] ?? null)?->getBody(), true);
+
+        return ($result['status'] === 'sent' && ($body['PaymentType'] ?? null) === 2) ?: json_encode([$result, $body]);
+    });
+
+    check('no bank account mapped and no default: refused with a message, nothing sent', function() use ($payments, $live, $tx3, $resetRow) {
+        $resetRow();
+        $saved = $live->paymentAccounts;
+        $live->paymentAccounts = [];
+        $before = count($GLOBALS['vzHistory']);
+        $result = $payments->register($tx3);
+        $live->paymentAccounts = $saved;
+
+        return ($result['status'] === 'failed' && !$result['retryable'] && str_contains((string)$result['message'], 'No Visma bank account') && count($GLOBALS['vzHistory']) === $before)
+            ?: json_encode($result);
+    });
+
+    check('a ledger account number resolves to the Visma bank account that books to it', function() use ($payments, $live, $mock, $reply, $tx3, $invoiceGuid2, $remaining2, $bankGuid1930, $gateway, $resetRow) {
+        $resetRow();
+        $saved = $live->paymentAccounts;
+        $live->paymentAccounts = [$gateway->handle => ['bankAccountId' => '1930']];
+        $mock->append($reply(200, ['Meta' => ['TotalNumberOfResults' => 2], 'Data' => [
+            ['Id' => '3f2c8a5e-1b7d-4c9a-9e0f-5a6b7c8d0000', 'LedgerAccountNumber' => 1930, 'IsActive' => false, 'Name' => 'Old'],
+            ['Id' => $bankGuid1930, 'LedgerAccountNumber' => 1930, 'IsActive' => true, 'Name' => 'Företagskonto'],
+        ]]));
+        $mock->append($reply(200, ['Id' => $invoiceGuid2, 'RemainingAmountInvoiceCurrency' => $remaining2]));
+        $mock->append($reply(201, []));
+        $before = count($GLOBALS['vzHistory']);
+        $result = $payments->register($tx3);
+        $live->paymentAccounts = $saved;
+        $sent = array_slice($GLOBALS['vzHistory'], $before);
+        $body = json_decode((string)($sent[2]['request'] ?? null)?->getBody(), true);
+
+        return ($result['status'] === 'sent'
+            && str_contains((string)$sent[0]['request']->getUri(), '/v2/bankaccounts')
+            && ($body['CompanyBankAccountId'] ?? null) === $bankGuid1930)
+            ?: json_encode([$result, $body]);
+    });
+
+    check('a ledger account no Visma bank account books to is refused by name', function() use ($payments, $live, $tx3, $gateway, $resetRow) {
+        $resetRow();
+        $saved = $live->paymentAccounts;
+        $live->paymentAccounts = [$gateway->handle => ['bankAccountId' => '1940']];
+        $result = $payments->register($tx3);
+        $live->paymentAccounts = $saved;
+
+        return ($result['status'] === 'failed' && str_contains((string)$result['message'], '1940')) ?: json_encode($result);
+    });
+
+    check('a payment in another currency than the invoice is refused', function() use ($payments, $payOrder, $orderP2) {
+        $foreign = $payOrder($orderP2, 1.0, 'purchase', 'success', 'XTS');
+        dropPaymentJobs((int)$foreign->id);
+        $result = $payments->register($foreign);
+
+        return ($result['status'] === 'failed' && str_contains((string)$result['message'], 'XTS')) ?: json_encode($result);
+    });
+
+    check('voucher mode registers nothing — the voucher already books the settlement', function() use ($payments, $live, $tx1) {
+        $live->documentMode = Settings::MODE_VOUCHER;
+        $result = $payments->register($tx1);
+        $queued = $payments->queueTransaction($tx1);
+        $live->documentMode = Settings::MODE_INVOICE;
+
+        return ($result['status'] === 'skipped' && !$queued) ?: json_encode($result);
+    });
+
+    check('turning payments off stops the queueing', function() use ($payments, $live, $tx1) {
+        $live->syncPayments = false;
+        $queued = $payments->queueTransaction($tx1);
+        $live->syncPayments = true;
+
+        return !$queued;
+    });
+
+    check('a waiting payment is picked up by the retry command once its invoice exists', function() use ($payments, $plugin, $paidOrder, $productA, $payOrder, $mock, $reply) {
+        // Only this run's rows should be outstanding when retryUnsent() runs.
+        \justinholtweb\vismaz\records\PaymentRecord::updateAll(['status' => 'skipped'], ['status' => ['failed', 'waiting', 'pending']]);
+
+        $order = $paidOrder($productA);
+        $tx = $payOrder($order, (float)$order->getTotalPrice());
+        dropPaymentJobs((int)$tx->id);
+        $waiting = $payments->register($tx)['status'];
+
+        $guid = 'a1b2c3d4-0000-4000-8000-00000000a003';
+        $plugin->getSync()->record($plugin->getDocuments()->buildInvoice($order, false), Sync::STATUS_SENT, $guid);
+        $mock->append($reply(200, ['Id' => $guid, 'RemainingAmountInvoiceCurrency' => (float)$order->getTotalPrice()]));
+        $mock->append($reply(201, []));
+        $result = $payments->retryUnsent(10);
+
+        return ($waiting === 'waiting' && $result['attempted'] === 1 && $result['sent'] === 1) ?: json_encode([$waiting, $result]);
+    });
+
+    check('the payment date is the transaction’s calendar date in the site’s time zone', function() {
+        $t = new craft\commerce\models\Transaction();
+        $t->dateCreated = new DateTime('2026-10-08 06:30:00', new DateTimeZone('UTC'));
+        $expected = (clone $t->dateCreated)->setTimezone(new DateTimeZone(Craft::$app->getTimeZone()))->format('Y-m-d');
+
+        return \justinholtweb\vismaz\services\Payments::paymentDate($t) === $expected;
+    });
+
+    check('the payment reference fits Visma’s 100 characters', function() use ($orderP1) {
+        $t = new craft\commerce\models\Transaction();
+        $t->reference = str_repeat('x', 200);
+
+        return mb_strlen(\justinholtweb\vismaz\services\Payments::referenceFor($t, $orderP1)) === 100;
+    });
+
+    check('the settings form’s gateway rows are keyed by handle, so a CP mapping is found', function() {
+        $settings = new Settings();
+        $settings->setAttributes(['paymentAccounts' => [
+            0 => ['gateway' => 'stripe', 'account' => '1580', 'bankAccountId' => '3f2c8a5e-1b7d-4c9a-9e0f-5a6b7c8d9e01'],
+            'new1' => ['gateway' => '', 'account' => '1930'],
+        ]], false);
+
+        return ($settings->getPaymentAccount('stripe') === '1580'
+            && $settings->getPaymentBankAccountId('stripe') === '3f2c8a5e-1b7d-4c9a-9e0f-5a6b7c8d9e01'
+            && array_keys($settings->paymentAccounts) === ['stripe'])
+            ?: json_encode($settings->paymentAccounts);
+    });
+
+    check('a gateway with no bank account falls back to the default, which can be an environment variable', function() {
+        putenv('VISMAZ_TEST_BANK_ACCOUNT=3f2c8a5e-1b7d-4c9a-9e0f-5a6b7c8d9e09');
+        $settings = new Settings(['defaultBankAccountId' => '$VISMAZ_TEST_BANK_ACCOUNT', 'paymentAccounts' => ['swish' => ['account' => '1930']]]);
+        $id = $settings->getPaymentBankAccountId('swish');
+        putenv('VISMAZ_TEST_BANK_ACCOUNT');
+
+        return $id === '3f2c8a5e-1b7d-4c9a-9e0f-5a6b7c8d9e09' ?: var_export($id, true);
+    });
+
+    check('a bank account that is neither a GUID nor a ledger account fails validation', function() {
+        $bad = new Settings(['defaultBankAccountId' => 'my bank', 'paymentAccounts' => ['stripe' => ['bankAccountId' => 'nope']]]);
+        $bad->validate();
+        $good = new Settings(['defaultBankAccountId' => '1930', 'paymentAccounts' => ['stripe' => ['bankAccountId' => '$STRIPE_BANK']]]);
+        $good->validate();
+
+        return ($bad->hasErrors('defaultBankAccountId') && $bad->hasErrors('paymentAccounts') && !$good->hasErrors('defaultBankAccountId') && !$good->hasErrors('paymentAccounts'))
+            ?: json_encode([$bad->getErrors(), $good->getErrors()]);
+    });
+
+    check('the payments table is in both the install and the upgrade migration, and the schema version moved', function() use ($plugin) {
+        $install = file_get_contents(dirname(__DIR__, 2) . '/src/migrations/Install.php');
+
+        return (Craft::$app->getDb()->tableExists(Table::PAYMENTS)
+            && str_contains($install, 'createPaymentsTable')
+            && is_file(dirname(__DIR__, 2) . '/src/migrations/m261008_000000_create_payments_table.php')
+            && version_compare($plugin->schemaVersion, '5.1.0', '>='))
+            ?: 'schema ' . $plugin->schemaVersion;
+    });
+
+    check('every queued response was consumed — nothing asserted against a stale mock', fn() => $mock->count() === 0 ?: $mock->count() . ' left');
 } finally {
     // -------------------------------------------------------------------------
     // Clean up, pass or fail.
@@ -1420,8 +1904,29 @@ try {
 
     $db = Craft::$app->getDb();
 
+    // Payments: put the in-memory settings and the real HTTP client back, drop any token this run
+    // planted, and any payment job still queued for this run's orders.
+    $plugin->getApi()->setClient(null);
+
+    if ($paymentSettingsBefore !== null) {
+        foreach ($paymentSettingsBefore as $key => $value) {
+            $plugin->getSettings()->$key = $value;
+        }
+    }
+
+    if ($createdToken) {
+        $db->createCommand()->delete(Table::TOKENS, ['environment' => $plugin->getSettings()->environment])->execute();
+        $plugin->getAuth()->getConnection(true);
+    }
+
     foreach ($createdOrders as $order) {
         try {
+            foreach ((new craft\db\Query())->select(['id'])->from('{{%commerce_transactions}}')->where(['orderId' => $order->id])->column() as $transactionId) {
+                dropPaymentJobs((int)$transactionId);
+            }
+
+            $db->createCommand()->delete(Table::PAYMENTS, ['orderId' => $order->id])->execute();
+            $db->createCommand()->delete(Table::LOG, ['orderId' => $order->id])->execute();
             $db->createCommand()->delete(Table::DOCUMENTORDERS, ['orderId' => $order->id])->execute();
 
             // Document rows are keyed on the order, not joined to it until a push succeeds, so

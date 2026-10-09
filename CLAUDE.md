@@ -44,6 +44,35 @@ Administration*, which has no public API.
   unchanged customer is not re-pushed on every order.
 - `{{%vismaz_tokens}}` — one row per environment, so sandbox and production coexist.
 - `{{%vismaz_log}}` — the connection log.
+- `{{%vismaz_payments}}` (5.1.0) — one row per Commerce transaction registered against a Visma
+  invoice, **unique on `transactionId`**. Like document rows, no FK to the order: a payment that
+  reached Visma stays on record.
+
+### Invoice payments (5.1.0)
+
+`services\Payments::register()` is the only place a payment row is written, mirroring
+`Sync::record()`: claim the row (unique index, integrity-race re-read), take a mutex per
+transaction, skip if `sent`. Triggered by `Transactions::EVENT_AFTER_SAVE_TRANSACTION` (not
+`Order::EVENT_AFTER_ORDER_PAID`, which fires only on *full* payment) → `RegisterPaymentJob`, which
+throws (so the queue retries, max 5) **only** for transient failures (`ApiException::isTransient()`:
+no status, 429, 5xx). A payment before its invoice is parked `waiting`; `Sync::push()` calls
+`Payments::queueForOrder()` once an invoice is sent *or mismatched*. Before each POST it GETs the
+invoice and refuses a payment exceeding `RemainingAmountInvoiceCurrency` by more than 0.51 (the
+öresavrundning allowance) — the guard against a double registration after a lost response.
+
+- Endpoint: `POST /v2/customerinvoices/{invoiceId}/payments`, body `InvoicePaymentApi`
+  (`CompanyBankAccountId` GUID, `PaymentDate` yyyy-mm-dd in company TZ, no future dates,
+  `PaymentAmount` in invoice currency, `PaymentCurrency`, `PaymentType` 1 partial / 2 complete,
+  optional `Reference` ≤ 100). Read from https://eaccountingapi.vismaonline.com/openapi/v2.json
+  (the old `/swagger/docs/v2` URL is a 404 now; the browsable docs are at `/scalar/v2`).
+- **The response carries no payment id.** `vismaReference` is `BankTransactionId` if Visma returns
+  one, otherwise the `Reference` we sent.
+- `CompanyBankAccountId` is a Visma *bank account* GUID, not a BAS account. Settings accept either
+  the GUID or the bank account's ledger number (`1930`), resolved via `GET /v2/bankaccounts`
+  (`LedgerAccountNumber`, active only), cached 5 minutes.
+- `Settings::paymentAccounts` is normalised to be keyed by gateway handle in `init()` and
+  `setAttributes()`. Before 5.1.0 the editable table's list-shaped rows were stored as posted and
+  never matched a gateway lookup.
 
 ### Dispositions
 
@@ -147,16 +176,19 @@ No local PHP on this Mac. Everything runs inside the plugin-testing container:
 
 ```sh
 cd ~/Sites/plugin-testing
-ddev exec php /var/www/craft-vismaz/tests/integration/checks.php   # 169 checks
-docker exec -w /var/www/html ddev-plugin-testing-web php /var/www/craft-vismaz/tests/integration/security.php  # 12: connection permission and production, callback state checks
+ddev exec php /var/www/craft-vismaz/tests/integration/checks.php   # 201 checks
+docker exec -w /var/www/html ddev-plugin-testing-web php /var/www/craft-vismaz/tests/integration/security.php  # 18: connection permission and production, callback state checks, payments/register access
 docker exec -w /sites/craft-vismaz ddev-phpstan-runner-web bash -c 'vendor/bin/phpstan analyse --memory-limit=1G && vendor/bin/ecs check'
 ddev exec bash -c 'find /var/www/craft-vismaz/src -name "*.php" -print0 | xargs -0 -n1 php -l'
 ```
 
 Vismaz is a **single-edition** plugin — one price, no feature gating — and a check walks `src/`
 asserting no `isPro`/`EDITION_` reference creeps back in. The suite restores the settings and every
-fixture in a `finally`. Nothing in it talks to Visma —
-correctness lives in the builders and the tax decisions, not in the transport.
+fixture in a `finally`. Nothing in it talks to Visma — the invoice-payment checks swap
+`Api::setClient()` for a Guzzle `MockHandler` + `Middleware::history` and assert the exact request
+body; they plant a token row if none exists and remove it afterwards, and delete any
+`RegisterPaymentJob` the listener queued at once, so a CP request elsewhere in the shared harness
+cannot run it against the real Visma.
 
 **Harness notes** (neither is a Vismaz bug):
 - `craft-penny` types its `Elements::EVENT_BEFORE_SAVE_ELEMENT` handler as `ModelEvent` while

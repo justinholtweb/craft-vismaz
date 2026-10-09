@@ -4,6 +4,7 @@ namespace justinholtweb\vismaz\models;
 
 use craft\base\Model;
 use craft\helpers\App;
+use craft\helpers\StringHelper;
 use justinholtweb\vismaz\helpers\Bas;
 
 /**
@@ -57,6 +58,13 @@ class Settings extends Model
 
     /** Create a credit note in Visma when an order is refunded (Pro). */
     public bool $syncRefunds = true;
+
+    /**
+     * Register each Commerce payment against its Visma invoice (invoice mode). Without it every
+     * invoice sits in Visma's receivables as unpaid, and Visma's own reminders chase customers who
+     * have already paid.
+     */
+    public bool $syncPayments = true;
 
     /** Send the invoice to the customer from Visma rather than only creating it. */
     public bool $sendInvoiceFromVisma = false;
@@ -142,16 +150,27 @@ class Settings extends Model
     public string $feeAccount = Bas::BANK_CHARGES;
 
     /**
-     * Commerce payment gateway handle → [account, feeAccount, feePercent, feeFixed].
+     * Commerce payment gateway handle → [account, feeAccount, feePercent, feeFixed, bankAccountId].
      *
      * This is the setting that decides whether a merchant's books reconcile. Klarna, Swish, card
      * and invoice do not settle to the same account, and the PSP's cut is a cost posting in its
      * own right rather than a discount on revenue.
+     *
+     * `bankAccountId` is the Visma bank account an invoice payment is registered to: its GUID, or
+     * the ledger account number of a bank account in Visma (`1930`), which `Payments` resolves to
+     * the GUID. Env-parseable. Visma's payment endpoint takes a bank account from its own register
+     * rather than a ledger account, hence a column of its own.
+     *
+     * Always keyed by gateway handle: the settings form posts an editable table's rows as a list,
+     * and `setAttributes()` re-keys them.
      */
     public array $paymentAccounts = [];
 
     /** Account used when a gateway has no mapping of its own. */
     public string $defaultPaymentAccount = Bas::CARD_RECEIVABLES;
+
+    /** Visma bank account (GUID or its ledger account number) for invoice payments when a gateway has none. Env-parseable. */
+    public string $defaultBankAccountId = '';
 
     // Housekeeping
     // -------------------------------------------------------------------------
@@ -164,6 +183,55 @@ class Settings extends Model
 
     // Resolved accessors
     // -------------------------------------------------------------------------
+
+    public function init(): void
+    {
+        parent::init();
+        $this->paymentAccounts = self::normalisePaymentAccounts($this->paymentAccounts);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function setAttributes($values, $safeOnly = true): void
+    {
+        parent::setAttributes($values, $safeOnly);
+        $this->paymentAccounts = self::normalisePaymentAccounts($this->paymentAccounts);
+    }
+
+    /**
+     * Key payment-account rows by gateway handle.
+     *
+     * The settings form's editable table posts rows as `[0 => ['gateway' => 'stripe', …]]`, while
+     * every reader looks a gateway up by handle. Before 5.1.0 the rows were stored as posted, so a
+     * mapping made in the CP never matched and every gateway settled to the default account.
+     * Rows already keyed by handle (config files, earlier saves) pass through unchanged.
+     */
+    public static function normalisePaymentAccounts(mixed $rows): array
+    {
+        $normalised = [];
+
+        foreach ((array)$rows as $key => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $handle = trim((string)($row['gateway'] ?? ''));
+
+            if ($handle === '' && is_string($key) && !preg_match('/^new\d+$/', $key)) {
+                $handle = $key;
+            }
+
+            if ($handle === '') {
+                continue;
+            }
+
+            unset($row['gateway']);
+            $normalised[$handle] = $row;
+        }
+
+        return $normalised;
+    }
 
     public function getClientId(): string
     {
@@ -206,6 +274,25 @@ class Settings extends Model
         }
 
         return $this->defaultPaymentAccount;
+    }
+
+    /**
+     * The Visma bank account an invoice payment through this gateway is registered to, falling
+     * back to the default. Null when neither is set — a payment is then refused with a message
+     * rather than guessed onto some account.
+     */
+    public function getPaymentBankAccountId(?string $gatewayHandle): ?string
+    {
+        $mapped = $this->paymentAccounts[$gatewayHandle] ?? null;
+        $raw = is_array($mapped) ? trim((string)($mapped['bankAccountId'] ?? '')) : '';
+
+        if ($raw === '') {
+            $raw = trim($this->defaultBankAccountId);
+        }
+
+        $value = trim((string)App::parseEnv($raw));
+
+        return $value === '' ? null : $value;
     }
 
     /**
@@ -258,6 +345,9 @@ class Settings extends Model
                 'validateAccount',
             ],
             [['salesAccounts', 'vatAccounts'], 'validateAccountMap'],
+            [['defaultBankAccountId'], 'trim'],
+            [['defaultBankAccountId'], 'validateBankAccountId'],
+            [['paymentAccounts'], 'validatePaymentAccounts'],
         ];
     }
 
@@ -283,5 +373,51 @@ class Settings extends Model
                 $this->addError($attribute, \Craft::t('vismaz', '“{value}” is not a BAS account number.', ['value' => $account]));
             }
         }
+    }
+
+    /**
+     * A Visma bank account is given as its GUID or its ledger account number. An
+     * environment-variable reference is left alone: it may well not be set where the settings are
+     * being saved.
+     */
+    public function validateBankAccountId(string $attribute): void
+    {
+        if (!self::isValidBankAccountReference((string)$this->$attribute)) {
+            $this->addError($attribute, \Craft::t('vismaz', '“{value}” is neither a Visma bank account ID nor a ledger account number.', ['value' => $this->$attribute]));
+        }
+    }
+
+    public function validatePaymentAccounts(string $attribute): void
+    {
+        foreach ((array)$this->$attribute as $mapping) {
+            if (!is_array($mapping)) {
+                continue;
+            }
+
+            foreach (['account', 'feeAccount'] as $key) {
+                $account = trim((string)($mapping[$key] ?? ''));
+
+                if ($account !== '' && !Bas::isValidAccount($account)) {
+                    $this->addError($attribute, \Craft::t('vismaz', '“{value}” is not a BAS account number.', ['value' => $account]));
+                }
+            }
+
+            $bankAccountId = (string)($mapping['bankAccountId'] ?? '');
+
+            if (!self::isValidBankAccountReference($bankAccountId)) {
+                $this->addError($attribute, \Craft::t('vismaz', '“{value}” is neither a Visma bank account ID nor a ledger account number.', ['value' => $bankAccountId]));
+            }
+        }
+    }
+
+    private static function isValidBankAccountReference(string $value): bool
+    {
+        $value = trim($value);
+
+        return $value === ''
+            || str_starts_with($value, '$')
+            || str_starts_with($value, '@')
+            || StringHelper::isUUID($value)
+            || Bas::isValidAccount($value);
     }
 }

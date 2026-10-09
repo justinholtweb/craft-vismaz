@@ -16,12 +16,14 @@ class Install extends Migration
         $this->createTables();
         $this->createIndexes();
         $this->addForeignKeys();
+        self::createPaymentsTable($this);
 
         return true;
     }
 
     public function safeDown(): bool
     {
+        $this->dropTableIfExists(Table::PAYMENTS);
         $this->dropTableIfExists(Table::LOG);
         $this->dropTableIfExists(Table::TOKENS);
         $this->dropTableIfExists(Table::ENTITIES);
@@ -29,6 +31,50 @@ class Install extends Migration
         $this->dropTableIfExists(Table::DOCUMENTS);
 
         return true;
+    }
+
+    /**
+     * Invoice payments (5.1.0). Shared with the upgrade migration so a fresh install and an
+     * upgraded one cannot end up with different tables.
+     */
+    public static function createPaymentsTable(Migration $migration): void
+    {
+        $migration->createTable(Table::PAYMENTS, [
+            'id' => $migration->primaryKey(),
+            // The Commerce transaction this payment is. Unique below, and that index is the
+            // guarantee a transaction is registered in Visma at most once. Deliberately no foreign
+            // key: like document rows, a payment that reached Visma stays on record after the order
+            // is deleted, because it is still in the merchant's books.
+            'transactionId' => $migration->integer()->notNull(),
+            'orderId' => $migration->integer()->notNull(),
+            // The invoice document it was registered against. Null while waiting for one.
+            'documentId' => $migration->integer(),
+            'gatewayHandle' => $migration->string(64),
+            // pending | waiting | sent | failed | skipped
+            'status' => $migration->string(16)->notNull()->defaultValue('pending'),
+            'amount' => $migration->decimal(14, 4),
+            'currency' => $migration->string(8),
+            // Visma's PaymentType: 1 partial, 2 complete.
+            'paymentType' => $migration->smallInteger(),
+            'paymentDate' => $migration->date(),
+            'bankAccountId' => $migration->string(64),
+            // What was sent as the payment's Reference, and what Visma gave back to find it by.
+            'reference' => $migration->string(100),
+            'vismaReference' => $migration->string(100),
+            'payload' => $migration->mediumText(),
+            'response' => $migration->mediumText(),
+            'attempts' => $migration->integer()->notNull()->defaultValue(0),
+            'lastError' => $migration->text(),
+            'dateSent' => $migration->dateTime(),
+            'dateCreated' => $migration->dateTime()->notNull(),
+            'dateUpdated' => $migration->dateTime()->notNull(),
+            'uid' => $migration->uid(),
+        ]);
+
+        $migration->createIndex(null, Table::PAYMENTS, ['transactionId'], true);
+        $migration->createIndex(null, Table::PAYMENTS, ['orderId']);
+        $migration->createIndex(null, Table::PAYMENTS, ['status']);
+        $migration->addForeignKey(null, Table::PAYMENTS, ['documentId'], Table::DOCUMENTS, ['id'], 'SET NULL', null);
     }
 
     private function createTables(): void

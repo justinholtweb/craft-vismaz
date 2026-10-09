@@ -84,6 +84,25 @@ en nollbeskattad försäljning. Kontrollera momsreglerna i Commerce för det lan
 - Har de redan skickats? En order som redan omfattas av ett verifikat utesluts ur listan över
   osynkade — det är det som hindrar att den bokförs två gånger.
 
+## En betalning står kvar på "väntar"
+
+Ordern betalades innan fakturan fanns i Visma, vilket är normalt. Den registreras så snart fakturan
+skickas. Skickas fakturan inte automatiskt (automatisk sändning är av, eller ordern ligger utanför
+statusfiltret), skicka den från orderpanelen; betalningarna följer med.
+`php craft vismaz/sync/payments` kör om allt som väntar.
+
+## "No Visma bank account is mapped for the … gateway"
+
+Visma registrerar en betalning mot ett av sina egna bankkonton, och Vismaz gissar inte vilket. Ge
+gatewayen ett **bankkonto i Visma** under **Betalsätt** i inställningarna, eller ange
+standardkontot, och tryck sedan **Registrera betalningar** på ordern.
+
+## "Registering … would overpay it"
+
+Visma säger att mindre är obetalt på fakturan än betalningen gäller. Oftast finns betalningen redan
+där — någon har markerat fakturan som betald i Visma, eller ett tidigare försök nådde Visma men
+svaret kom aldrig tillbaka. Titta på fakturan i Visma först; Vismaz skickar den medvetet inte.
+
 ## SIE-filen läses in med förvanskade kontonamn
 
 En SIE-fil är **CP437**, inte UTF-8, och Vismaz skriver den så. Kommer Å, Ä och Ö in förvanskade har

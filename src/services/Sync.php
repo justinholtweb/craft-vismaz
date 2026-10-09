@@ -100,6 +100,21 @@ class Sync extends Component
 
             $this->linkOrders($record, $document->orderIds);
 
+            // Payments made before the invoice existed — the usual case, since the first payment
+            // is what completes the order — are parked as waiting; this is what releases them.
+            // Done before the reconcile, because a mismatched invoice is still in Visma and the
+            // money was still received.
+            if ($document->type === Document::TYPE_INVOICE && isset($document->orderIds[0])) {
+                try {
+                    $plugin->getPayments()->queueForOrder((int)$document->orderIds[0]);
+                } catch (Throwable $e) {
+                    $plugin->getLog()->warning('payment.queue', $e->getMessage(), [
+                        'documentId' => $record->id,
+                        'orderId' => $document->orderIds[0],
+                    ]);
+                }
+            }
+
             // Never trust the mapping — check what Visma actually booked against what was sent.
             $mismatch = $this->reconcile($document, $response);
 
@@ -496,8 +511,8 @@ class Sync extends Component
     }
 
     /**
-     * Record the invoice's payment in Visma, so the merchant's receivables do not fill up with
-     * invoices that were paid before they existed.
+     * After an invoice is in Visma: have Visma email it, if the merchant asked. (Its payments are
+     * queued in `push()`, before the reconcile, so a mismatched invoice still gets them.)
      */
     private function afterInvoice(Document $document, DocumentRecord $record): void
     {

@@ -12,4 +12,5 @@ abstract class Table
     public const ENTITIES = '{{%vismaz_entities}}';
     public const TOKENS = '{{%vismaz_tokens}}';
     public const LOG = '{{%vismaz_log}}';
+    public const PAYMENTS = '{{%vismaz_payments}}';
 }

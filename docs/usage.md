@@ -2,7 +2,7 @@
 title: Usage
 slug: usage
 order: 30
-summary: Sending orders, running summary vouchers, refunds, the OSS report and SIE export.
+summary: Sending orders, registering payments, running summary vouchers, refunds, the OSS report and SIE export.
 ---
 
 ## Previewing an order
@@ -22,6 +22,45 @@ period's journal instead, since that is where it belongs.
 Turn on **Send automatically when an order completes** and Vismaz queues a job on completion. It
 is queued rather than inline, deliberately: a Visma outage, an expired token or a slow VIES lookup
 must never be able to stop a customer paying.
+
+## Payments
+
+In invoice mode, every successful capture or purchase on an order is **registered as a payment
+against its Visma invoice**, so the invoice is closed in Visma's receivables and Visma's reminders
+never chase a customer who paid at checkout.
+
+- **One Commerce transaction, one Visma payment.** A split or partial payment registers as a
+  partial payment; the one that settles the order registers as complete.
+- The **amount and currency** are the transaction's. The **date** is the day the money was taken,
+  in the site's time zone (Visma reads it in the company's, and refuses a date in the future).
+- The payment goes to the **Visma bank account mapped for its gateway** under
+  [Payment methods](configuration#payment-methods), or the default.
+- A payment made **before the invoice exists** — the usual case, since paying is what completes the
+  order — shows as *waiting*, and is registered the moment the invoice is in Visma.
+
+Registration is queued when Commerce records the transaction, never inline. A Visma that is down
+or answering 5xx is retried by the queue, up to five times; a refusal (a 4xx, no bank account
+mapped, a currency that is not the invoice's) is recorded and left for you, with the reason.
+
+The order panel lists each payment with its status and the reference Visma has for it, and
+**Register payments** re-runs every payment on the order that is not yet in Visma. A payment
+already registered is skipped — pressing it twice sends nothing twice. Payments that failed or are
+still waiting can also be re-run from the console:
+
+```sh
+php craft vismaz/sync/payments
+```
+
+Every attempt is in **Vismaz → Log**, against the order and the invoice, and a payment log entry
+has its own **Register this order's payments again** button.
+
+Before each payment Vismaz asks Visma how much is still open on the invoice. A payment that would
+overpay it by more than half a krona is **refused, not sent** — the guard against registering one
+twice after an attempt reached Visma but its answer was lost. Up to half a krona over is allowed,
+because an invoice settled to whole kronor can be that much under what the customer paid.
+
+Voucher mode registers no payments: the summary voucher already books each order to its
+gateway's settlement account.
 
 ## Summary vouchers
 
@@ -103,6 +142,8 @@ php craft vismaz/sync/orders --dryRun --from=2026-08-01 --to=2026-08-31
 php craft vismaz/sync/orders --from=2026-08-01 --to=2026-08-31
 php craft vismaz/sync/voucher --from=2026-08-01 --to=2026-08-31 [--dryRun]
 php craft vismaz/sync/retry
+php craft vismaz/sync/payments [--limit=100]
+php craft vismaz/sync/bank-accounts
 php craft vismaz/sie/export --from=… --to=… [--path=…] [--includeSynced]
 php craft vismaz/auth/status
 php craft vismaz/auth/refresh

@@ -116,6 +116,14 @@
     on: settings.syncRefunds
 }) }}
 
+{{ lightswitchField({
+    label: 'Register payments against invoices'|t('vismaz'),
+    instructions: 'Invoice mode. Each successful capture or purchase is registered against the order’s Visma invoice, to the Visma bank account mapped for its gateway below — partial payments included. A payment made before the invoice exists waits for it.'|t('vismaz'),
+    id: 'syncPayments',
+    name: 'syncPayments',
+    on: settings.syncPayments
+}) }}
+
 {% set statusOptions = [] %}
 {% if craft.app.plugins.isPluginEnabled('commerce') %}
     {% for status in craft.commerce.orderStatuses.getAllOrderStatuses() %}
@@ -313,7 +321,8 @@
             account: mapped.account ?? '',
             feeAccount: mapped.feeAccount ?? '',
             feePercent: mapped.feePercent ?? '',
-            feeFixed: mapped.feeFixed ?? ''
+            feeFixed: mapped.feeFixed ?? '',
+            bankAccountId: mapped.bankAccountId ?? ''
         }]) %}
     {% endfor %}
 {% endif %}
@@ -324,15 +333,27 @@
     id: 'paymentAccounts',
     name: 'paymentAccounts',
     cols: {
-        gateway: { heading: 'Gateway'|t('vismaz'), type: 'singleline', width: '25%' },
+        gateway: { heading: 'Gateway'|t('vismaz'), type: 'singleline', width: '20%' },
         account: { heading: 'Settles to'|t('vismaz'), type: 'singleline', width: '15%' },
         feeAccount: { heading: 'Fee account'|t('vismaz'), type: 'singleline', width: '15%' },
-        feePercent: { heading: 'Fee %'|t('vismaz'), type: 'singleline', width: '15%' },
-        feeFixed: { heading: 'Fee fixed'|t('vismaz'), type: 'singleline', width: '15%' }
+        feePercent: { heading: 'Fee %'|t('vismaz'), type: 'singleline', width: '10%' },
+        feeFixed: { heading: 'Fee fixed'|t('vismaz'), type: 'singleline', width: '10%' },
+        bankAccountId: { heading: 'Visma bank account'|t('vismaz'), type: 'autosuggest', suggestEnvVars: true, width: '20%' }
     },
     rows: gatewayRows,
+    errors: settings.getErrors('paymentAccounts'),
     addRowLabel: 'Add a gateway'|t('vismaz'),
     static: false
+}) }}
+
+{{ autosuggestField({
+    label: 'Default Visma bank account'|t('vismaz'),
+    instructions: 'Where an invoice payment is registered when its gateway has no Visma bank account of its own. Visma registers a payment to one of the bank accounts set up in Visma, so this is either that bank account’s ledger account number (e.g. 1930), or its Visma ID — `craft vismaz/sync/bank-accounts` lists both. An environment variable works too.'|t('vismaz'),
+    id: 'defaultBankAccountId',
+    name: 'defaultBankAccountId',
+    value: settings.defaultBankAccountId,
+    suggestEnvVars: true,
+    errors: settings.getErrors('defaultBankAccountId')
 }) }}
 
 <hr>

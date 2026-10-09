@@ -27,6 +27,13 @@
             </div>
         {% endif %}
 
+        {% if entry.orderId %}
+            <div class="data">
+                <div class="heading">{{ 'Order'|t('vismaz') }}</div>
+                <div class="value"><a href="{{ cpUrl('commerce/orders/' ~ entry.orderId) }}">#{{ entry.orderId }}</a></div>
+            </div>
+        {% endif %}
+
         {% if entry.documentId %}
             <div class="data">
                 <div class="heading">{{ 'Document'|t('vismaz') }}</div>
@@ -39,6 +46,17 @@
         <blockquote class="note {{ entry.level == 'error' ? 'error' : (entry.level == 'warning' ? 'warning' : '') }}" style="margin-top:16px;">
             <p>{{ entry.message }}</p>
         </blockquote>
+    {% endif %}
+
+    {% if entry.orderId and entry.action starts with 'payment.' and currentUser.can('vismaz-pushDocuments') %}
+        <form method="post" accept-charset="UTF-8" style="margin-top:16px;">
+            {{ csrfInput() }}
+            {{ actionInput('vismaz/payments/register') }}
+            {{ redirectInput('vismaz/log/' ~ entry.id) }}
+            {{ hiddenInput('orderId', entry.orderId) }}
+            <button type="submit" class="btn submit">{{ 'Register this order’s payments again'|t('vismaz') }}</button>
+            <span class="light" style="margin-left:8px;">{{ 'Payments already in Visma are skipped, never sent twice.'|t('vismaz') }}</span>
+        </form>
     {% endif %}
 
     {% for label, body in { ('Request'|t('vismaz')): entry.requestBody, ('Response'|t('vismaz')): entry.responseBody } %}

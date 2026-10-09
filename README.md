@@ -26,8 +26,13 @@ integrations get wrong — are all Swedish:
 ## Two ways an order can land
 
 **Invoice mode** creates one `CustomerInvoice` per order, with the customer and articles synced
-ahead of it and a credit note when it is refunded. This is what a B2B shop wants, and it makes
-Visma's own statements and reminders work.
+ahead of it, a payment registered against it when the order is paid, and a credit note when it is
+refunded. This is what a B2B shop wants, and it makes Visma's own statements and reminders work.
+
+Payments are registered per Commerce transaction — a split or partial payment becomes one Visma
+payment each — to the Visma bank account mapped for the gateway, dated the day the money was taken.
+A payment made before the invoice exists (the usual case: paying is what completes the order) waits
+and is registered as soon as the invoice is in Visma.
 
 **Voucher mode** aggregates orders into a periodic summary journal — one verification per day,
 week or month, with lines grouped by ledger account. This is what a Swedish accountant actually
@@ -63,6 +68,9 @@ php craft plugin/install vismaz
    rather than accepting the last one, so a merchant with a trading company and a holding company
    cannot silently connect the wrong books.
 4. Choose invoice or voucher mode, and check the ledger accounts against the merchant's own chart.
+5. In invoice mode, give each payment gateway the Visma bank account its payments are registered
+   to — its ledger account number (`1930`) or its Visma ID; `php craft vismaz/sync/bank-accounts`
+   lists both — or set a default for all of them.
 
 Sandbox and production keep separate connections, so switching between them loses neither.
 
@@ -81,6 +89,7 @@ feature-gated tier: one price, everything switched on.
 | Reverse charge with VIES validation | ✓ |
 | OSS destination VAT + per-country report | ✓ |
 | Payment-method → ledger account mapping, processor fees | ✓ |
+| Payments registered against invoices, partial payments included | ✓ |
 | Credit notes from refunds | ✓ |
 | SIE 4 export | ✓ |
 | Automatic send on order completion | ✓ |
@@ -104,6 +113,12 @@ php craft vismaz/sync/voucher --from=2026-08-01 --to=2026-08-31 --dryRun
 # not replayed from a stale payload.
 php craft vismaz/sync/retry
 
+# Register invoice payments that failed, or that were waiting for their invoice.
+php craft vismaz/sync/payments
+
+# The bank accounts set up in Visma — what a gateway's "Visma bank account" setting takes.
+php craft vismaz/sync/bank-accounts
+
 # SIE 4 file for an accountant on desktop Visma.
 php craft vismaz/sie/export --from=2026-08-01 --to=2026-08-31 --path=./august.se
 
@@ -119,6 +134,12 @@ php craft vismaz/log/prune
 on it. The queue can retry, the merchant can mash the button and the console can run — all at
 once — and only one document exists at the end of it. An order likewise cannot be swept into two
 different summary vouchers.
+
+**It cannot register a payment twice.** One Commerce transaction is one row, unique on the
+transaction, claimed under a lock and skipped once sent — so the queue's retries, the order panel's
+**Register payments** button and the console can all run at once. Before each payment, Vismaz also
+asks Visma what is still open on the invoice and refuses one that would overpay it, which catches a
+payment whose first attempt reached Visma but whose answer was lost.
 
 **The preview is the push.** The CP preview, the console dry run, the real send and the SIE writer
 all run the same builder and consume the same document. A preview is not an approximation of what

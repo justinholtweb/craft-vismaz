@@ -1,5 +1,42 @@
 # Changelog
 
+## 5.1.0 - 2026-10-08
+
+> {warning} In invoice mode, Vismaz now registers each payment against its Visma invoice, and needs
+> to know which **Visma bank account** to register it to. Set one per gateway under **Payment
+> methods** in the settings, or a **Default Visma bank account** — a ledger account number such as
+> `1930`, or the bank account's Visma ID (`php craft vismaz/sync/bank-accounts` lists them). Until
+> one is set, payments are refused with a message saying so, and wait to be re-run. Also check your
+> payment-method accounts: mappings saved before 5.1.0 were never read (see Fixed), and now apply.
+
+### Added
+- Invoice payments. Every successful capture or purchase on an order is registered against its
+  Visma customer invoice (`POST /v2/customerinvoices/{id}/payments`), with the transaction's amount,
+  currency and date, as a partial payment or as the one that settles the order. Invoices no longer
+  sit unpaid in Visma's receivables after the customer has paid, and Visma's reminders stop
+  chasing them.
+- A payment made before its invoice exists waits, and is registered as soon as the invoice is in
+  Visma.
+- Registration is queued and retried by the queue when Visma is unreachable or answers 5xx. A
+  refusal is recorded with its reason instead of retried.
+- One Commerce transaction is registered at most once: a payment row unique on the transaction,
+  claimed under a lock, plus a check of what Visma still has open on the invoice before each
+  payment, which refuses one that would overpay it.
+- Payments on the order panel, with their status and the reference Visma has for them, and a
+  **Register payments** button that re-runs any not yet in Visma. Payments registered against an
+  invoice show on its document screen; each attempt is in the log, with a re-run button.
+- A **Visma bank account** per payment gateway and a default, as a ledger account number or a
+  Visma ID, env-var-able.
+- `vismaz/sync/payments` re-runs payments that failed or are waiting; `vismaz/sync/bank-accounts`
+  lists the bank accounts set up in Visma.
+
+### Fixed
+- Payment-method accounts set in the CP were saved in a shape the settings never read back, so
+  every gateway settled to the default account and the table showed empty on reload. They are now
+  read as saved, and stored keyed by gateway.
+- A ledger account in the payment-method table that is not a BAS account number now fails
+  validation, like every other account setting.
+
 ## 5.0.1 - 2026-10-07
 
 > {warning} Connecting, testing and disconnecting Visma have moved from the plugin settings page to
