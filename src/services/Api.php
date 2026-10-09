@@ -144,10 +144,10 @@ class Api extends Component
                 $refreshed = true;
                 // Ask Auth for the token rather than reading the record: what is stored is
                 // ciphertext, and only Auth holds the key.
-                $auth->refresh();
+                $auth->refresh(null, $token);
                 $refreshedToken = $auth->getAccessToken();
 
-                if ($refreshedToken !== null) {
+                if ($refreshedToken !== null && $refreshedToken !== $token) {
                     $token = $refreshedToken;
                     continue;
                 }
@@ -175,9 +175,20 @@ class Api extends Component
                 'message' => $status < 400 ? null : self::describeError($decoded, $status),
             ] + $context);
 
+            if ($status === 401) {
+                // Still refused after a refresh (or the refresh itself was refused): the token is
+                // not the problem, the grant behind it is — revoked, or the Visma user changed
+                // their password. Somebody has to reconnect, and Visma will not say so twice.
+                Plugin::getInstance()->getAlerts()->noteAuthFailure(Craft::t('vismaz', 'Visma still answered 401 after the access token was renewed ({message}).', [
+                    'message' => self::describeError($decoded, $status),
+                ]));
+            }
+
             if ($status >= 400) {
                 throw new ApiException(self::describeError($decoded, $status), $status);
             }
+
+            Plugin::getInstance()->getAlerts()->noteAuthSuccess();
 
             return $decoded;
         }

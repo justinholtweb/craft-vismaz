@@ -47,6 +47,8 @@ Administration*, which has no public API.
 - `{{%vismaz_payments}}` (5.1.0) — one row per Commerce transaction registered against a Visma
   invoice, **unique on `transactionId`**. Like document rows, no FK to the order: a payment that
   reached Visma stays on record.
+- `{{%vismaz_alerts}}` — failure-alert latches, one row per incident, unique on `incident` (Erpy's
+  table is keyed on `(connectionId, incident)`; Vismaz has one connection per environment).
 
 ### Invoice payments (5.1.0)
 
@@ -73,6 +75,43 @@ invoice and refuses a payment exceeding `RemainingAmountInvoiceCurrency` by more
 - `Settings::paymentAccounts` is normalised to be keyed by gateway handle in `init()` and
   `setAttributes()`. Before 5.1.0 the editable table's list-shaped rows were stored as posted and
   never matched a gateway lookup.
+
+### Failure alerts (ported from Erpy via Zo, 2026-10-09)
+
+`services\Alerts` is a copy of craft-erpy's reference (its CLAUDE.md, "Failure alerts"), by way of
+craft-zo, with the connection dimension dropped. Five incidents: **failures** (document rows
+`failed` by `dateUpdated` inside `alertWindowMinutes`, threshold to open, a whole quiet window to
+close), **mismatched** (rows `mismatched` inside the window), **payments** (payment rows `failed`
+inside the window, same threshold — a failed write-back leaves the invoice open and Visma's
+reminders chase a customer who paid), **auth** (a pushed signal), **stalled** (`stalled()`: with
+`autoPush` in invoice mode, completed eligible orders placed more than `alertStallHours` ago, within
+7 days and after the install date, with no invoice row by key or join row; plus `pending` documents
+and `pending` payments that old, and `waiting` payments whose invoice has been in Visma that long).
+Hooks: `Sync::push()` and `Payments::register()` wrap the real work (`runPush()`/`runRegister()`)
+and call `afterDocument()`/`afterPayment()` in a `finally`; `Api::request()` signals a final 401 and
+calls `noteAuthSuccess()` on every success; `Auth::requestToken()` signals a 4xx on the
+**refresh_token** grant only (a refused authorization code is a person at the Connect button; a
+network error never reaches it). `check()` does nothing until `Auth::isConfigured()` and
+`isConnected()`. Cron: `vismaz/alerts/check`, also run by `vismaz/sync/retry` and
+`vismaz/sync/payments`. Do not change when touching it: the conditional-UPDATE claim/release,
+redaction before anything leaves (and phrase detail strings so `token:`/`secret=` never precede a
+value you want kept — the pattern redacts it), the webhook through `webhookTarget()` (`helpers\Ip`
+is the family copy — keep it identical; `alerts.php` diffs it against craft-zo's), the HMAC header,
+every path fail-open.
+
+### Order status (Orders index column, condition rule, bulk action)
+
+`services\OrderStatus::orderStatuses()` (PHP, four queries per page) and `condition()` (SQL, for
+`VismaStatusConditionRule::modifyQuery()`) define the same five sets in the same precedence —
+failed > mismatched > synced > pending > none — and `tests/integration/orders.php` holds them to
+partitioning the fixtures identically. Change one, change both. A document belongs to an order by
+its join row **or** its key (`order:<id>`, `refund:<id>:<hash>`): a failed invoice has no join row.
+The SQL reads the id out of the key with `keyOrderIdExpression()` (MySQL `SUBSTRING_INDEX`,
+Postgres `SPLIT_PART`), so the condition is an uncorrelated `IN (… UNION …)`. A failed payment marks
+its order failed. The column memoises per request and is prefetched from
+`OrderQuery::EVENT_AFTER_POPULATE_ELEMENTS` on `element-indexes/*` requests only. The rule is
+registered unconditionally. `SendToVisma` re-checks `vismaz-pushDocuments` and queues
+`PushDocumentJob` per completed order.
 
 ### Dispositions
 
@@ -162,6 +201,18 @@ fail loudly, it quietly misfiles a year of revenue.
   attempt or an earlier notice reads as this one's.
 - **Project config writes are buffered** until the request ends; a bare console script has to
   flush them itself.
+- **`push()` used to skip only `sent`** — a `mismatched` invoice (which *is* in Visma) was posted a
+  second time by the order panel's **Send to Visma**. Both are "already in Visma" now; the bulk
+  action made that bug reachable for a hundred orders at once.
+- **`expiresAt` is a bare UTC string** (`Db::prepareDateForDb()`). `new DateTimeImmutable($s)`
+  reads it in the site's zone: Stockholm refreshed on every request, Los Angeles (the harness)
+  kept a dead token for seven hours. Pass `new DateTimeZone('UTC')`.
+- **A 401 must force the refresh.** `refresh()` re-reads the row and returns early when the token
+  is not near expiry (the race guard), so a 401 on a token Visma had revoked retried with the same
+  token. `refresh(null, $rejected)` now refreshes unless the row holds a *different* token.
+- **Commerce's order actions need `Cp::requestedSite()`**: a non-admin without `editsite:<uid>`
+  gets a 500 from `element-indexes/perform-action` before the action runs — a refusal test passes
+  vacuously unless it asserts 400/403.
 
 Vismaz is part of the Commerce-to-accounting family: `[[project_craft_knox]]` (Fortnox, the other
 Swedish one — read `[[craft-knox-gotchas]]` first, it shares the öresavrundning problem),
@@ -178,6 +229,8 @@ No local PHP on this Mac. Everything runs inside the plugin-testing container:
 cd ~/Sites/plugin-testing
 ddev exec php /var/www/craft-vismaz/tests/integration/checks.php   # 201 checks
 docker exec -w /var/www/html ddev-plugin-testing-web php /var/www/craft-vismaz/tests/integration/security.php  # 18: connection permission and production, callback state checks, payments/register access
+docker exec -w /var/www/html ddev-plugin-testing-web php /var/www/craft-vismaz/tests/integration/alerts.php    # 76: latch, mail, SSRF, webhook, auth signals, stall, widget, console, test action over HTTP
+docker exec -w /var/www/html ddev-plugin-testing-web php /var/www/craft-vismaz/tests/integration/orders.php    # 23: status sets vs SQL, condition rule, column + action over HTTP
 docker exec -w /sites/craft-vismaz ddev-phpstan-runner-web bash -c 'vendor/bin/phpstan analyse --memory-limit=1G && vendor/bin/ecs check'
 ddev exec bash -c 'find /var/www/craft-vismaz/src -name "*.php" -print0 | xargs -0 -n1 php -l'
 ```
@@ -189,6 +242,14 @@ fixture in a `finally`. Nothing in it talks to Visma — the invoice-payment che
 body; they plant a token row if none exists and remove it afterwards, and delete any
 `RegisterPaymentJob` the listener queued at once, so a CP request elsewhere in the shared harness
 cannot run it against the real Visma.
+
+`alerts.php` and `orders.php` share `tests/integration/_support.php`: settings in memory only, the
+real mailer on Symfony's null transport (captured), one Guzzle `MockHandler` for both `Api` and the
+token endpoint (`Auth::$tokenClient`), a planted fixture token (refused if the harness has a real
+connection), and a shutdown function that removes every fixture, latch and queued job. The harness
+runs in America/Los_Angeles and holds a hundred-odd completed orders from sibling plugins with no
+Visma documents, so the stall checks make *this process* believe Vismaz was installed 6½ hours ago
+(reflection on `Plugins::$_storedPluginInfo`, never written) instead of touching those orders.
 
 **Harness notes** (neither is a Vismaz bug):
 - `craft-penny` types its `Elements::EVENT_BEFORE_SAVE_ELEMENT` handler as `ModelEvent` while

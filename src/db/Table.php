@@ -13,4 +13,7 @@ abstract class Table
     public const TOKENS = '{{%vismaz_tokens}}';
     public const LOG = '{{%vismaz_log}}';
     public const PAYMENTS = '{{%vismaz_payments}}';
+
+    /** Failure-alert latches: one row per incident type. */
+    public const ALERTS = '{{%vismaz_alerts}}';
 }

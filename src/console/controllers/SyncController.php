@@ -195,6 +195,8 @@ class SyncController extends Controller
             $result['failed']
         ));
 
+        $this->checkAlerts();
+
         return $result['failed'] === 0 ? ExitCode::OK : ExitCode::UNSPECIFIED_ERROR;
     }
 
@@ -216,6 +218,8 @@ class SyncController extends Controller
             $result['waiting'],
             $result['failed']
         ));
+
+        $this->checkAlerts();
 
         return $result['failed'] === 0 ? ExitCode::OK : ExitCode::UNSPECIFIED_ERROR;
     }
@@ -256,6 +260,19 @@ class SyncController extends Controller
         }
 
         return ExitCode::OK;
+    }
+
+    /**
+     * Cron runs the retry commands when nothing else is running, so they are where a stall is
+     * noticed and an incident is seen to clear.
+     */
+    private function checkAlerts(): void
+    {
+        foreach (Plugin::getInstance()->getAlerts()->check() as $result) {
+            if ($result['transition'] !== null) {
+                $this->stdout(sprintf('Alert %s: %s%s', $result['transition'], $result['incident'], PHP_EOL), Console::FG_YELLOW);
+            }
+        }
     }
 
     /**

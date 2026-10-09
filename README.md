@@ -93,6 +93,8 @@ feature-gated tier: one price, everything switched on.
 | Credit notes from refunds | ✓ |
 | SIE 4 export | ✓ |
 | Automatic send on order completion | ✓ |
+| Visma column, status filter and bulk **Send to Visma** on the Orders index | ✓ |
+| Failure alerts by email, Slack or Teams, and a Dashboard health widget | ✓ |
 | Console commands | ✓ |
 
 The renewal is optional. The plugin keeps working when it lapses; you stop receiving updates.
@@ -125,8 +127,37 @@ php craft vismaz/sie/export --from=2026-08-01 --to=2026-08-31 --path=./august.se
 # Is the connection alive, and to which company?
 php craft vismaz/auth/status
 
+# Evaluate the failure alerts and send any that are owed — run it from cron to catch a stall.
+php craft vismaz/alerts/check
+
+# Send a sample alert to the saved recipients and webhook.
+php craft vismaz/alerts/test
+
 php craft vismaz/log/prune
 ```
+
+## Alerts
+
+The Documents screen knows what has gone wrong; alerts make somebody look at it. One email — and
+optionally a Slack, Teams or signed-JSON webhook — when one of these starts, and one when it
+clears:
+
+- orders failing to reach Visma,
+- documents Visma booked at a different total from the one sent,
+- payments that could not be registered against their Visma invoice,
+- Visma refusing the connection (a Visma password change kills the refresh token at once),
+- sending stalled — usually a queue that is not running.
+
+Never one per failure: each incident is a single latch, held quiet after a recovery so a flapping
+connection cannot fill an inbox. Bodies are redacted before they leave the site, and the webhook
+only goes to public addresses. A **Visma health** Dashboard widget shows the same incidents.
+See [docs/alerts.md](docs/alerts.md).
+
+## The Orders index
+
+A **Visma** column (Synced, Mismatched, Failed, Pending, Not sent), a **Visma status** filter for
+custom sources such as "Failed in Visma", and a bulk **Send to Visma** action that queues every
+selected order. A document already in Visma is never posted a second time.
 
 ## What Vismaz guarantees
 

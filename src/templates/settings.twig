@@ -358,6 +358,157 @@
 
 <hr>
 
+<h2>{{ 'Alerts'|t('vismaz') }}</h2>
+
+<p class="light">{{ 'One message when something goes wrong, one when it has cleared — never one per failure. Checked after every push and payment, the moment Visma refuses the connection, and by `php craft vismaz/alerts/check` (run it from cron to catch a stalled queue).'|t('vismaz') }}</p>
+
+{{ autosuggestField({
+    label: 'Email alerts to'|t('vismaz'),
+    instructions: 'Addresses separated by commas, or an environment variable. Leave empty for no email.'|t('vismaz'),
+    id: 'alertRecipients',
+    name: 'alertRecipients',
+    suggestEnvVars: true,
+    value: settings.alertRecipients,
+    errors: settings.getErrors('alertRecipients')
+}) }}
+
+{{ autosuggestField({
+    label: 'Slack or Teams webhook URL'|t('vismaz'),
+    instructions: 'Optional. An incoming-webhook URL — best kept in an environment variable, because the URL is the credential. Only public hosts are allowed and redirects are never followed.'|t('vismaz'),
+    id: 'alertWebhookUrl',
+    name: 'alertWebhookUrl',
+    suggestEnvVars: true,
+    value: settings.alertWebhookUrl,
+    errors: settings.getErrors('alertWebhookUrl')
+}) }}
+
+{{ selectField({
+    label: 'Webhook format'|t('vismaz'),
+    id: 'alertWebhookFormat',
+    name: 'alertWebhookFormat',
+    options: [
+        { value: 'slack', label: 'Slack'|t('vismaz') },
+        { value: 'teams', label: 'Microsoft Teams'|t('vismaz') },
+        { value: 'json', label: 'Plain JSON (your own receiver)'|t('vismaz') },
+    ],
+    value: settings.alertWebhookFormat,
+    errors: settings.getErrors('alertWebhookFormat')
+}) }}
+
+{{ autosuggestField({
+    label: 'Webhook signing secret'|t('vismaz'),
+    instructions: 'Optional. When set, each webhook carries `X-Vismaz-Timestamp` and `X-Vismaz-Signature: sha256=…`, an HMAC of `timestamp.body`, so your own receiver can verify it. Slack and Teams ignore it.'|t('vismaz'),
+    id: 'alertWebhookSecret',
+    name: 'alertWebhookSecret',
+    suggestEnvVars: true,
+    value: settings.alertWebhookSecret
+}) }}
+
+{{ lightswitchField({
+    label: 'Alert when orders fail to reach Visma'|t('vismaz'),
+    instructions: 'Invoices, credit notes or vouchers Visma refused, or that could not be sent.'|t('vismaz'),
+    id: 'alertOnFailures',
+    name: 'alertOnFailures',
+    on: settings.alertOnFailures
+}) }}
+
+{{ lightswitchField({
+    label: 'Alert when a payment cannot be registered'|t('vismaz'),
+    instructions: 'A Commerce payment that could not be registered against its Visma invoice — the invoice then stays open, and Visma’s reminders can chase a customer who has paid.'|t('vismaz'),
+    id: 'alertOnPayments',
+    name: 'alertOnPayments',
+    on: settings.alertOnPayments
+}) }}
+
+{{ textField({
+    label: 'Failures that open an alert'|t('vismaz'),
+    instructions: 'This many failed documents (or failed payments) inside the window below. It closes again after a whole window with none.'|t('vismaz'),
+    id: 'alertFailureThreshold',
+    name: 'alertFailureThreshold',
+    type: 'number',
+    size: 5,
+    value: settings.alertFailureThreshold,
+    errors: settings.getErrors('alertFailureThreshold')
+}) }}
+
+{{ lightswitchField({
+    label: 'Alert when Visma books a different total'|t('vismaz'),
+    instructions: 'A document Visma accepted at a total that disagrees with the one sent — usually a mapping that is subtly wrong.'|t('vismaz'),
+    id: 'alertOnMismatch',
+    name: 'alertOnMismatch',
+    on: settings.alertOnMismatch
+}) }}
+
+{{ textField({
+    label: 'Window'|t('vismaz'),
+    instructions: 'Minutes. Failures and mismatches are counted inside it; an incident clears after a whole window with nothing new.'|t('vismaz'),
+    id: 'alertWindowMinutes',
+    name: 'alertWindowMinutes',
+    type: 'number',
+    size: 5,
+    value: settings.alertWindowMinutes,
+    errors: settings.getErrors('alertWindowMinutes')
+}) }}
+
+{{ lightswitchField({
+    label: 'Alert when Visma refuses the connection'|t('vismaz'),
+    instructions: 'A refused refresh token, or a 401 that refreshing did not fix. A Visma refresh token dies the moment the Visma user changes their password; nothing reaches Visma until somebody reconnects.'|t('vismaz'),
+    id: 'alertOnAuthFailure',
+    name: 'alertOnAuthFailure',
+    on: settings.alertOnAuthFailure
+}) }}
+
+{{ textField({
+    label: 'Stalled after (hours)'|t('vismaz'),
+    instructions: 'A completed order with no invoice this long after it was placed (while sending automatically), a send stuck as pending, or a payment whose job never ran. Usually a queue that is not running. 0 turns this off.'|t('vismaz'),
+    id: 'alertStallHours',
+    name: 'alertStallHours',
+    type: 'number',
+    size: 5,
+    value: settings.alertStallHours,
+    errors: settings.getErrors('alertStallHours')
+}) }}
+
+{{ textField({
+    label: 'Quiet period after a recovery'|t('vismaz'),
+    instructions: 'Minutes. An incident that comes straight back is reported when this ends, if it is still happening — so a flapping connection cannot fill an inbox.'|t('vismaz'),
+    id: 'alertCooldownMinutes',
+    name: 'alertCooldownMinutes',
+    type: 'number',
+    size: 5,
+    value: settings.alertCooldownMinutes,
+    errors: settings.getErrors('alertCooldownMinutes')
+}) }}
+
+{% if currentUser and currentUser.admin %}
+    <div class="field">
+        <button type="button" class="btn" id="vismaz-test-alert">{{ 'Send a test alert'|t('vismaz') }}</button>
+        <span id="vismaz-test-alert-note" class="light">{{ 'Uses the saved settings — save first.'|t('vismaz') }}</span>
+    </div>
+
+    {% js %}
+    (function() {
+        var btn = document.getElementById('vismaz-test-alert');
+        var note = document.getElementById('vismaz-test-alert-note');
+
+        if (!btn) { return; }
+
+        btn.addEventListener('click', function() {
+            // Never nest a <form> inside the settings form — post the action instead.
+            btn.classList.add('loading');
+            Craft.sendActionRequest('POST', 'vismaz/alerts/test')
+                .then(function(response) { note.textContent = response.data.message; })
+                .catch(function(error) {
+                    note.textContent = (error.response && error.response.data && error.response.data.message) || 'Request failed.';
+                })
+                .finally(function() { btn.classList.remove('loading'); });
+        });
+    })();
+    {% endjs %}
+{% endif %}
+
+<hr>
+
 <h2>{{ 'Log'|t('vismaz') }}</h2>
 
 {{ lightswitchField({

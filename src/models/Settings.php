@@ -181,6 +181,60 @@ class Settings extends Model
     /** Record full request and response bodies in the log. */
     public bool $logPayloads = true;
 
+    // Alerts
+    // -------------------------------------------------------------------------
+    // Nothing here is `required` either: an empty recipient list and an empty webhook URL simply
+    // mean nobody is told, and a fresh install must still be able to save every other setting.
+
+    /** Comma- or newline-separated addresses, or an `$ENV` reference that resolves to them. */
+    public string $alertRecipients = '';
+
+    /** A Slack or Teams incoming-webhook URL (or `$ENV`). Sent through the SSRF guard. */
+    public string $alertWebhookUrl = '';
+
+    /** `slack`, `teams` or `json` — the shape of the webhook body. */
+    public string $alertWebhookFormat = 'slack';
+
+    /** Optional. When set, the webhook carries an `X-Vismaz-Signature` HMAC of its body. */
+    public string $alertWebhookSecret = '';
+
+    /** Orders, credit notes or vouchers Visma refused, or that could not be sent. */
+    public bool $alertOnFailures = true;
+
+    /**
+     * This many failures inside the window opens the incident (documents and payments count
+     * separately). One by default: every failure is an order that is not in the books.
+     */
+    public int $alertFailureThreshold = 1;
+
+    /** The window failures and mismatches are counted in, in minutes. */
+    public int $alertWindowMinutes = 60;
+
+    /** A document Visma booked at a different total from the one sent. */
+    public bool $alertOnMismatch = true;
+
+    /** A Commerce payment that could not be registered against its Visma invoice. */
+    public bool $alertOnPayments = true;
+
+    /** Visma refusing the refresh token, or a 401 that refreshing did not fix. */
+    public bool $alertOnAuthFailure = true;
+
+    /**
+     * Hours after which work that should have happened and has not is an incident: a completed
+     * order with no invoice while automatic sending is on, a send stuck in `pending`, a payment
+     * whose job never ran. Usually a queue that is not running. 0 turns the check off.
+     */
+    public int $alertStallHours = 6;
+
+    /** An incident that reopens this soon after its recovery message waits out the rest. */
+    public int $alertCooldownMinutes = 60;
+
+    /**
+     * Config-file only: let the alert webhook reach private, loopback and link-local hosts (a
+     * self-hosted Mattermost on the LAN). The scheme and no-redirect rules still hold.
+     */
+    public bool $allowPrivateAlertWebhookHosts = false;
+
     // Resolved accessors
     // -------------------------------------------------------------------------
 
@@ -348,7 +402,69 @@ class Settings extends Model
             [['defaultBankAccountId'], 'trim'],
             [['defaultBankAccountId'], 'validateBankAccountId'],
             [['paymentAccounts'], 'validatePaymentAccounts'],
+            [['alertOnFailures', 'alertOnMismatch', 'alertOnPayments', 'alertOnAuthFailure', 'allowPrivateAlertWebhookHosts'], 'boolean'],
+            [['alertFailureThreshold'], 'integer', 'min' => 1, 'max' => 10000],
+            [['alertWindowMinutes'], 'integer', 'min' => 5, 'max' => 10080],
+            [['alertStallHours'], 'integer', 'min' => 0, 'max' => 720],
+            [['alertCooldownMinutes'], 'integer', 'min' => 0, 'max' => 10080],
+            [['alertWebhookFormat'], 'in', 'range' => ['slack', 'teams', 'json']],
+            [['alertRecipients', 'alertWebhookUrl', 'alertWebhookSecret'], 'trim'],
+            [['alertRecipients', 'alertWebhookUrl', 'alertWebhookSecret'], 'string', 'max' => 2000],
+            [['alertRecipients'], 'validateRecipients'],
+            [['alertWebhookUrl'], 'validateWebhookUrl'],
         ];
+    }
+
+    /**
+     * Every address must be one, when there are any. An `$ENV` reference that is not set yet is
+     * allowed — a staging site legitimately has no recipients.
+     */
+    public function validateRecipients(string $attribute): void
+    {
+        foreach ($this->recipientList(false) as $address) {
+            if (filter_var($address, FILTER_VALIDATE_EMAIL) === false) {
+                $this->addError($attribute, \Craft::t('vismaz', '“{address}” is not an email address.', ['address' => $address]));
+            }
+        }
+    }
+
+    /**
+     * Only the shape is checked here. Where the host resolves is checked at send time, every time,
+     * because DNS can change between a save and a send.
+     */
+    public function validateWebhookUrl(string $attribute): void
+    {
+        $url = trim((string)App::parseEnv($this->alertWebhookUrl));
+
+        if ($url === '' || str_starts_with($url, '$')) {
+            return;
+        }
+
+        $scheme = strtolower((string)parse_url($url, PHP_URL_SCHEME));
+
+        if (!in_array($scheme, ['http', 'https'], true) || !parse_url($url, PHP_URL_HOST)) {
+            $this->addError($attribute, \Craft::t('vismaz', 'Only http:// and https:// webhook URLs are allowed.'));
+        }
+    }
+
+    /**
+     * The alert recipients, with `$ENV` resolved.
+     *
+     * @return string[]
+     */
+    public function recipientList(bool $validOnly = true): array
+    {
+        $raw = trim((string)App::parseEnv($this->alertRecipients));
+
+        if ($raw === '' || str_starts_with($raw, '$')) {
+            return [];
+        }
+
+        $list = array_values(array_unique(array_filter(array_map('trim', preg_split('/[\s,;]+/', $raw) ?: []))));
+
+        return $validOnly
+            ? array_values(array_filter($list, static fn(string $a) => filter_var($a, FILTER_VALIDATE_EMAIL) !== false))
+            : $list;
     }
 
     /**

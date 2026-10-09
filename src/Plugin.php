@@ -3,30 +3,46 @@
 namespace justinholtweb\vismaz;
 
 use Craft;
+use craft\base\Element;
 use craft\base\Model;
 use craft\base\Plugin as BasePlugin;
+use craft\commerce\elements\conditions\orders\OrderCondition;
+use craft\commerce\elements\db\OrderQuery;
 use craft\commerce\elements\Order;
 use craft\commerce\events\TransactionEvent;
 use craft\commerce\services\Transactions;
+use craft\events\DefineAttributeHtmlEvent;
+use craft\events\PopulateElementsEvent;
+use craft\events\RegisterComponentTypesEvent;
+use craft\events\RegisterConditionRulesEvent;
+use craft\events\RegisterElementActionsEvent;
+use craft\events\RegisterElementTableAttributesEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
+use craft\helpers\Html;
+use craft\services\Dashboard;
 use craft\services\UserPermissions;
 use craft\web\twig\variables\CraftVariable;
 use craft\web\UrlManager;
 use craft\web\View;
+use justinholtweb\vismaz\elements\actions\SendToVisma;
+use justinholtweb\vismaz\elements\conditions\VismaStatusConditionRule;
 use justinholtweb\vismaz\jobs\PushDocumentJob;
 use justinholtweb\vismaz\models\Settings;
+use justinholtweb\vismaz\services\Alerts;
 use justinholtweb\vismaz\services\Api;
 use justinholtweb\vismaz\services\Articles;
 use justinholtweb\vismaz\services\Auth;
 use justinholtweb\vismaz\services\Customers;
 use justinholtweb\vismaz\services\Documents;
 use justinholtweb\vismaz\services\Log;
+use justinholtweb\vismaz\services\OrderStatus;
 use justinholtweb\vismaz\services\Payments;
 use justinholtweb\vismaz\services\Sie;
 use justinholtweb\vismaz\services\Sync;
 use justinholtweb\vismaz\services\Tax;
 use justinholtweb\vismaz\twig\VismazVariable;
+use justinholtweb\vismaz\widgets\HealthWidget;
 use Throwable;
 use yii\base\Event;
 
@@ -43,6 +59,8 @@ use yii\base\Event;
  * @property-read Sie $sie
  * @property-read Log $log
  * @property-read Payments $payments
+ * @property-read Alerts $alerts
+ * @property-read OrderStatus $orderStatus
  * @method Settings getSettings()
  */
 class Plugin extends BasePlugin
@@ -56,7 +74,7 @@ class Plugin extends BasePlugin
 
     public const HANDLE = 'vismaz';
 
-    public string $schemaVersion = '5.1.0';
+    public string $schemaVersion = '5.2.0';
     public bool $hasCpSettings = true;
     public bool $hasCpSection = true;
 
@@ -74,6 +92,8 @@ class Plugin extends BasePlugin
                 'sie' => ['class' => Sie::class],
                 'log' => ['class' => Log::class],
                 'payments' => ['class' => Payments::class],
+                'alerts' => ['class' => Alerts::class],
+                'orderStatus' => ['class' => OrderStatus::class],
             ],
         ];
     }
@@ -85,6 +105,7 @@ class Plugin extends BasePlugin
         $this->_registerTwigVariable();
         $this->_registerPermissions();
         $this->_registerCpRoutes();
+        $this->_registerWidgets();
 
         // The plugin can be installed while Commerce is disabled or mid-upgrade, and everything
         // below touches an order.
@@ -95,6 +116,7 @@ class Plugin extends BasePlugin
         $this->_registerOrderEditPanel();
         $this->_registerOrderCompletion();
         $this->_registerPayments();
+        $this->_registerOrderIndex();
     }
 
     public static function commerceIsReady(): bool
@@ -151,6 +173,16 @@ class Plugin extends BasePlugin
     public function getPayments(): Payments
     {
         return $this->get('payments');
+    }
+
+    public function getAlerts(): Alerts
+    {
+        return $this->get('alerts');
+    }
+
+    public function getOrderStatus(): OrderStatus
+    {
+        return $this->get('orderStatus');
     }
 
     protected function createSettingsModel(): ?Model
@@ -278,6 +310,128 @@ class Plugin extends BasePlugin
                 $event->rules['vismaz/connection'] = 'vismaz/connection/index';
             }
         );
+    }
+
+    private function _registerWidgets(): void
+    {
+        Event::on(
+            Dashboard::class,
+            Dashboard::EVENT_REGISTER_WIDGET_TYPES,
+            static function(RegisterComponentTypesEvent $event) {
+                $event->types[] = HealthWidget::class;
+            }
+        );
+    }
+
+    /**
+     * The Orders index: a Visma column, a "Visma status" filter, and a bulk "Send to Visma"
+     * action.
+     *
+     * Every hook is attached to the Order class, not to Element: the table-attribute events do not
+     * say which element type is asking.
+     */
+    private function _registerOrderIndex(): void
+    {
+        // Registered unconditionally. A rule registered only for some users or settings is
+        // dropped from saved conditions, and a custom source built on it silently widens to
+        // every order.
+        Event::on(
+            OrderCondition::class,
+            OrderCondition::EVENT_REGISTER_CONDITION_RULES,
+            static function(RegisterConditionRulesEvent $event) {
+                $event->conditionRules[] = VismaStatusConditionRule::class;
+            }
+        );
+
+        Event::on(
+            Order::class,
+            Element::EVENT_REGISTER_TABLE_ATTRIBUTES,
+            static function(RegisterElementTableAttributesEvent $event) {
+                $event->tableAttributes['vismazStatus'] = ['label' => Craft::t('vismaz', 'Visma')];
+            }
+        );
+
+        Event::on(
+            Order::class,
+            Element::EVENT_DEFINE_ATTRIBUTE_HTML,
+            static function(DefineAttributeHtmlEvent $event) {
+                if ($event->attribute !== 'vismazStatus') {
+                    return;
+                }
+
+                /** @var Order $order */
+                $order = $event->sender;
+                $event->html = Plugin::getInstance()->orderStatusHtml($order);
+                $event->handled = true;
+            }
+        );
+
+        // One lookup per index page rather than per row.
+        Event::on(
+            OrderQuery::class,
+            OrderQuery::EVENT_AFTER_POPULATE_ELEMENTS,
+            static function(PopulateElementsEvent $event) {
+                $request = Craft::$app->getRequest();
+
+                if ($request->getIsConsoleRequest() || !$request->getIsCpRequest() || ($request->getActionSegments()[0] ?? null) !== 'element-indexes') {
+                    return;
+                }
+
+                $ids = [];
+
+                foreach ($event->elements as $element) {
+                    if ($element instanceof Order && $element->id) {
+                        $ids[] = $element->id;
+                    }
+                }
+
+                try {
+                    Plugin::getInstance()->getOrderStatus()->prefetch($ids);
+                } catch (Throwable $e) {
+                    // The column falls back to one lookup per row; the index itself must load.
+                    Craft::warning('Vismaz could not prefetch order statuses: ' . $e->getMessage(), 'vismaz');
+                }
+            }
+        );
+
+        Event::on(
+            Order::class,
+            Element::EVENT_REGISTER_ACTIONS,
+            static function(RegisterElementActionsEvent $event) {
+                // Actions are not saved anywhere, so offering this only to people who may use it
+                // is safe; the action checks the permission again when it runs.
+                if (Craft::$app->getUser()->checkPermission('vismaz-pushDocuments')) {
+                    $event->actions[] = SendToVisma::class;
+                }
+            }
+        );
+    }
+
+    /**
+     * The Orders index cell: a status dot and a word.
+     */
+    public function orderStatusHtml(Order $order): string
+    {
+        if (!$order->id || !Craft::$app->getUser()->checkPermission('vismaz-viewDocuments')) {
+            return '';
+        }
+
+        $status = $this->getOrderStatus()->orderStatus((int)$order->id);
+        $label = OrderStatus::options()[$status] ?? $status;
+        $color = match ($status) {
+            OrderStatus::SYNCED => 'green',
+            OrderStatus::MISMATCHED => 'orange',
+            OrderStatus::FAILED => 'red',
+            OrderStatus::PENDING => 'yellow',
+            default => 'disabled',
+        };
+
+        if ($status === OrderStatus::NONE) {
+            return Html::tag('span', Html::encode($label), ['class' => 'light']);
+        }
+
+        return Html::tag('span', '', ['class' => ['status', $color], 'aria-hidden' => 'true'])
+            . Html::encode($label);
     }
 
     /**

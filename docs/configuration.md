@@ -142,3 +142,9 @@ reads them as saved, so a mapping you made then now takes effect — check them.
 Every request to Visma is recorded, with bodies if you want them. Credentials, tokens and secrets
 are stripped before anything is stored, so a support screenshot of the log is not a credential
 leak. Set a retention in days, or `0` to keep everything.
+
+## Alerts
+
+Who is told when sending to Visma goes wrong — email recipients, a Slack or Teams webhook, which
+incidents to alert on, the failure threshold and window, the stall time and a quiet period after a
+recovery. Nothing is required. See [Alerts](alerts.md) for every setting.

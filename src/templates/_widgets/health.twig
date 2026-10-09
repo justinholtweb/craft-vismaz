@@ -1,0 +1,61 @@
+{# The Dashboard tile. `overview` comes from Alerts::overview(). #}
+{% set documents = overview.documents %}
+{% set payments = overview.payments %}
+
+{% if not overview.connected %}
+    <p class="error">{{ 'Vismaz is not connected to Visma.'|t('vismaz') }}
+        {% if currentUser.can('vismaz-manageConnection') %}<a href="{{ cpUrl('vismaz/connection') }}">{{ 'Connect'|t('vismaz') }}</a>{% endif %}
+    </p>
+{% elseif overview.company %}
+    <p class="light">{{ overview.company }}{{ overview.environment == 'sandbox' ? ' · ' ~ 'Sandbox'|t('vismaz') }}</p>
+{% endif %}
+
+{% for incident in overview.incidents %}
+    <p class="error" title="{{ incident.detail }}">{{ incident.label }}</p>
+{% endfor %}
+
+<table class="data fullwidth">
+    <tbody>
+        <tr>
+            <th scope="row">{{ 'Sent'|t('vismaz') }}</th>
+            <td>{{ documents.sent|number }}</td>
+        </tr>
+        {% for status, label in { failed: 'Failed'|t('vismaz'), mismatched: 'Mismatched'|t('vismaz'), pending: 'Pending'|t('vismaz') } %}
+            <tr>
+                <th scope="row">{{ label }}</th>
+                <td>
+                    {% if documents[status] %}
+                        <a href="{{ cpUrl('vismaz/documents', { status: status }) }}" class="{{ status == 'pending' ? '' : 'error' }}">{{ documents[status]|number }}</a>
+                    {% else %}
+                        <span class="light">0</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        <tr>
+            <th scope="row">{{ 'Payments not registered'|t('vismaz') }}</th>
+            <td>
+                {% if payments.failed %}
+                    <span class="error">{{ payments.failed|number }}</span>
+                {% else %}
+                    <span class="light">0</span>
+                {% endif %}
+                {% if payments.waiting %}
+                    <span class="light">· {{ '{count} waiting for an invoice'|t('vismaz', { count: payments.waiting|number }) }}</span>
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">{{ 'Last sent'|t('vismaz') }}</th>
+            <td>
+                {% if overview.lastSent %}
+                    {{ date(overview.lastSent ~ ' UTC')|timestamp('short') }}
+                {% else %}
+                    <span class="light">{{ 'Never'|t('vismaz') }}</span>
+                {% endif %}
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+<p><a href="{{ cpUrl('vismaz/documents') }}">{{ 'Open the Documents screen'|t('vismaz') }}</a></p>

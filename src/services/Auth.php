@@ -8,6 +8,7 @@ use craft\helpers\StringHelper;
 use craft\helpers\UrlHelper;
 use DateTime;
 use DateTimeImmutable;
+use GuzzleHttp\ClientInterface;
 use justinholtweb\vismaz\Plugin;
 use justinholtweb\vismaz\records\TokenRecord;
 use Throwable;
@@ -38,6 +39,12 @@ class Auth extends Component
 
     /** Refresh this many seconds before the token actually expires. */
     private const REFRESH_SKEW = 120;
+
+    /**
+     * The HTTP client for the token endpoint. Null builds Craft's own per call; the integration
+     * checks put a Guzzle `MockHandler` client here, because the harness has no route to Visma.
+     */
+    public ?ClientInterface $tokenClient = null;
 
     /**
      * Where Visma sends the merchant back to. Must be registered with the client id exactly.
@@ -128,6 +135,15 @@ class Auth extends Component
     }
 
     /**
+     * The stored access token, in plaintext, without refreshing it — for redacting it out of an
+     * alert, where a refresh (a network call that rotates the refresh token) would be absurd.
+     */
+    public function getStoredAccessToken(): ?string
+    {
+        return self::decrypt($this->getConnection()?->accessToken);
+    }
+
+    /**
      * The stored refresh token, in plaintext.
      */
     public function getRefreshToken(): ?string
@@ -141,8 +157,12 @@ class Auth extends Component
      * Two requests racing here would both post the same refresh token; Visma rotates it, so the
      * loser would store a token that was already dead. Holding the lock and then re-checking
      * means the second one finds the work already done.
+     *
+     * `$rejected` is the access token Visma just answered 401 to. Its expiry time says nothing
+     * then — Visma has stopped honouring it — so the refresh goes ahead unless the row already
+     * holds a *different* token, which means another process refreshed while this one waited.
      */
-    public function refresh(?TokenRecord $record = null): ?TokenRecord
+    public function refresh(?TokenRecord $record = null, ?string $rejected = null): ?TokenRecord
     {
         $record ??= $this->getConnection();
 
@@ -162,7 +182,11 @@ class Auth extends Component
         try {
             $fresh = $this->getConnection(true);
 
-            if ($fresh !== null && !$this->isExpiring($fresh)) {
+            if (
+                $fresh !== null
+                && !$this->isExpiring($fresh)
+                && ($rejected === null || self::decrypt($fresh->accessToken) !== $rejected)
+            ) {
                 return $fresh;
             }
 
@@ -259,7 +283,11 @@ class Auth extends Component
             return true;
         }
 
-        return (new DateTimeImmutable($record->expiresAt))->getTimestamp() - self::REFRESH_SKEW <= time();
+        // Stored by `Db::prepareDateForDb()`, so the bare string is UTC. Read without a zone it is
+        // taken as the site's own: Stockholm then refreshed on every request (the token looked an
+        // hour or two old already), and a site west of UTC kept a dead token for hours past its
+        // expiry — a 401 on every call that the refresh below never fixed.
+        return (new DateTimeImmutable($record->expiresAt, new \DateTimeZone('UTC')))->getTimestamp() - self::REFRESH_SKEW <= time();
     }
 
     /**
@@ -278,7 +306,8 @@ class Auth extends Component
 
         $started = microtime(true);
 
-        $response = Craft::createGuzzleClient(['timeout' => 20])->post(
+        $response = ($this->tokenClient ?? Craft::createGuzzleClient(['timeout' => 20]))->request(
+            'POST',
             $settings->getIdentityBaseUrl() . '/connect/token',
             [
                 'auth' => [$settings->getClientId(), $settings->getClientSecret()],
@@ -305,6 +334,14 @@ class Auth extends Component
             $reason = is_array($body)
                 ? ($body['error_description'] ?? $body['error'] ?? 'HTTP ' . $status)
                 : 'HTTP ' . $status;
+
+            // A refresh token Visma will not honour is the connection dying: two years old, or
+            // the Visma user changed their password. Only a 4xx says that — a 5xx is Visma having
+            // a bad minute, and a network failure never gets this far. A refused *authorization
+            // code* is somebody at the Connect button, who can see the error for themselves.
+            if ($params['grant_type'] === 'refresh_token' && $status >= 400 && $status < 500) {
+                Plugin::getInstance()->getAlerts()->noteAuthFailure(Craft::t('vismaz', 'Visma refused to renew the connection ({reason}).', ['reason' => $reason]));
+            }
 
             throw new Exception(Craft::t('vismaz', 'Visma refused the token request: {reason}', ['reason' => $reason]));
         }

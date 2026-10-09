@@ -2,7 +2,7 @@
 title: Usage
 slug: usage
 order: 30
-summary: Sending orders, registering payments, running summary vouchers, refunds, the OSS report and SIE export.
+summary: Sending orders, the Orders index column and bulk action, registering payments, summary vouchers, refunds, the OSS report and SIE export.
 ---
 
 ## Previewing an order
@@ -108,6 +108,33 @@ finds out until a bank reconciliation months later.
 A mismatched document is already in Visma, so Vismaz does not offer to retry it — retrying would
 post it a second time. Reconcile it by hand.
 
+## The Orders index
+
+Commerce's **Orders** index gets three things from Vismaz:
+
+- **A Visma column.** Add it from the index's column settings. Each order reads **Synced**,
+  **Mismatched**, **Failed**, **Pending** or **Not sent** — the order as a whole: a failed credit
+  note or a payment that could not be registered marks it **Failed** even though its invoice is
+  in Visma, and a mismatch outranks a clean send. The column is filled for a whole page in a few
+  queries, and only shows to people with *View Visma documents*.
+- **A Visma status filter.** The same five statuses as a condition rule, so **Failed in Visma** or
+  **Not sent** can be a saved custom source. The filter and the column are built from the same
+  rules and cannot disagree.
+- **Send to Visma**, a bulk action for people with *Send orders to Visma*. It queues a push for
+  every selected completed order (carts are skipped) through the same code as the order panel's
+  button. A document already in Visma — sent or mismatched — is reported, never posted again, so
+  selecting an order that is already there is harmless; a failed one is rebuilt from the order as
+  it is now and retried.
+
+Voucher mode: an order belongs to its period's voucher only once the voucher is in Visma, so a
+voucher that failed does not mark its orders — look for it on the Documents screen.
+
+## Alerts
+
+One email (and optionally a Slack or Teams message) when documents fail, are booked at the wrong
+total, payments cannot be registered, Visma refuses the connection or sending stalls — and one when
+it clears. A **Visma health** Dashboard widget shows the same. See [Alerts](alerts.md).
+
 ## Retrying failures
 
 ```sh
@@ -148,6 +175,8 @@ php craft vismaz/sie/export --from=… --to=… [--path=…] [--includeSynced]
 php craft vismaz/auth/status
 php craft vismaz/auth/refresh
 php craft vismaz/log/prune [--days=30]
+php craft vismaz/alerts/check
+php craft vismaz/alerts/test
 ```
 
 A dry run needs no Visma connection at all. That is rather the point of it.

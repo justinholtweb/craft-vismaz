@@ -197,6 +197,24 @@ class Payments extends Component
      */
     public function register(Transaction $transaction): array
     {
+        try {
+            return $this->runRegister($transaction);
+        } finally {
+            // A payment that cannot be registered is an alert of its own. Fail-open: see
+            // Alerts::afterPayment().
+            $plugin = Plugin::getInstance();
+            $plugin->getOrderStatus()->reset();
+            $plugin->getAlerts()->afterPayment();
+        }
+    }
+
+    /**
+     * The registration itself; {@see register()} wraps it so every exit evaluates the alerts.
+     *
+     * @return array{status: string, payment: ?PaymentRecord, message: ?string, retryable: bool}
+     */
+    private function runRegister(Transaction $transaction): array
+    {
         $plugin = Plugin::getInstance();
         $settings = $plugin->getSettings();
 

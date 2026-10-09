@@ -115,3 +115,25 @@ preview. Send the file as generated.
 Body logging can be switched off in settings, but entries are still written. If there are no
 entries whatsoever, the requests are not being made: check that automatic sending is on, or run a
 console command and watch what appears.
+
+## An alert says "Visma refused the connection"
+
+Visma would not renew the connection, or still answered 401 after Vismaz renewed the access token.
+The usual cause is the Visma user who connected Vismaz changing their password — that kills the
+refresh token at once, two-year lifetime or not. Open **Vismaz → Connection** and connect again.
+The alert clears by itself on the next request Visma accepts.
+
+## An alert says "Sending to Visma has stalled"
+
+Something that should have happened `alertStallHours` ago has not: a completed order still has no
+invoice (with automatic sending on), a send is stuck as pending, or a payment's job never ran.
+Almost always Craft's queue is not running — check **Utilities → Queue Manager**, and that a queue
+runner or `php craft queue/run` on cron is set up. Send the missed orders with
+`php craft vismaz/sync/orders --from=…` and the payments with `php craft vismaz/sync/payments`.
+
+## No alert email arrives
+
+Press **Send a test alert** on the settings screen (or `php craft vismaz/alerts/test`). It uses
+Craft's own mailer, so a failure there is Craft's **Settings → Email**. Alerts are only checked
+while Vismaz is connected, and a stall is only noticed by `php craft vismaz/alerts/check` — run it
+from cron.

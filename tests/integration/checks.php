@@ -1955,6 +1955,9 @@ try {
         $db->createCommand()->delete(Table::DOCUMENTS, ['like', 'sourceKey', 'voucher:test-unbalanced:%', false])->execute();
         $db->createCommand()->delete(Table::LOG, ['like', 'action', 'test.%', false])->execute();
         $db->createCommand()->delete(Table::ENTITIES, ['like', 'localId', "%$suffix%", false])->execute();
+        // The pushes and payments above open failure-alert latches against fixture rows that are
+        // gone now; alerts.php covers the latch itself.
+        $db->createCommand()->delete(Table::ALERTS)->execute();
     } catch (Throwable $e) {
         echo "  ! cleanup query failed: {$e->getMessage()}\n";
     }

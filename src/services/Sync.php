@@ -52,6 +52,24 @@ class Sync extends Component
      */
     public function push(Document $document): array
     {
+        try {
+            return $this->runPush($document);
+        } finally {
+            // Every push is a chance to notice trouble without cron. Fail-open: see
+            // Alerts::afterDocument().
+            $plugin = Plugin::getInstance();
+            $plugin->getOrderStatus()->reset();
+            $plugin->getAlerts()->afterDocument();
+        }
+    }
+
+    /**
+     * The push itself; {@see push()} wraps it so every exit evaluates the alerts.
+     *
+     * @return array{status: string, document: DocumentRecord, message: ?string}
+     */
+    private function runPush(Document $document): array
+    {
         $plugin = Plugin::getInstance();
 
         if ($document->type === Document::TYPE_VOUCHER && !$document->balances()) {
@@ -63,12 +81,15 @@ class Sync extends Component
         $record = $this->record($document);
 
         // Already done. The unique index means this is the *only* row for this source key, so
-        // there is nothing to reconcile — just report it.
-        if ($record->status === self::STATUS_SENT) {
+        // there is nothing to reconcile — just report it. A mismatched document is in Visma too:
+        // posting it again would book the order twice, so it is reported, never re-sent.
+        if ($record->status === self::STATUS_SENT || $record->status === self::STATUS_MISMATCHED) {
             return [
                 'status' => self::STATUS_SKIPPED,
                 'document' => $record,
-                'message' => Craft::t('vismaz', 'Already in Visma as {number}.', ['number' => $record->vismaNumber ?: $record->vismaId]),
+                'message' => $record->status === self::STATUS_MISMATCHED
+                    ? Craft::t('vismaz', 'Already in Visma as {number}, booked at a different total — reconcile it in Visma by hand.', ['number' => $record->vismaNumber ?: $record->vismaId])
+                    : Craft::t('vismaz', 'Already in Visma as {number}.', ['number' => $record->vismaNumber ?: $record->vismaId]),
             ];
         }
 
