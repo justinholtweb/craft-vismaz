@@ -35,6 +35,11 @@
 - A 401 from Visma now renews the access token even when it is not near its expiry time, instead
   of retrying with the token Visma had just refused.
 
+### Changed
+- A refused token request now reads "Visma refused to issue an access token (…)". The old "Visma
+  refused the token request: …" reached the failure alert as "the token ••••", because alert
+  redaction masks whatever follows the word "token".
+
 ## 5.1.0 - 2026-10-08
 
 > {warning} In invoice mode, Vismaz now registers each payment against its Visma invoice, and needs

@@ -238,6 +238,25 @@ check('Visma’s own error text survives redaction', function() use ($alerts) {
     return str_contains($out, 'The customer does not exist') && str_contains($out, '4010') ?: $out;
 });
 
+check('Vismaz’s own token-refusal message survives redaction whole', function() use ($alerts, $plugin) {
+    // A refused token request becomes the document's error and so the alert's "Latest:" line,
+    // and the credential pattern eats the word after "token " — it used to read "the token ••••".
+    $auth = $plugin->getAuth();
+    $previous = $auth->tokenClient;
+    $auth->tokenClient = new Client(['handler' => HandlerStack::create(new MockHandler([vismaReply(400, ['error' => 'invalid_client'])]))]);
+    $text = null;
+
+    try {
+        (new ReflectionMethod($auth, 'requestToken'))->invoke($auth, ['grant_type' => 'authorization_code', 'code' => 'fixture-code']);
+    } catch (Throwable $e) {
+        $text = $e->getMessage();
+    }
+
+    $auth->tokenClient = $previous;
+
+    return $text !== null && str_contains($text, 'invalid_client') && $alerts->redact($text) === $text ?: (string)$text . ' => ' . $alerts->redact((string)$text);
+});
+
 check('tags are stripped and the length is capped', function() use ($alerts) {
     $out = $alerts->redact('<b>' . str_repeat('x', 900) . '</b>');
 

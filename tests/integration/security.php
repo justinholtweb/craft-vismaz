@@ -191,7 +191,7 @@ echo "\nThe callback\n";
  * the callback reports — which a refusal never does. Each attempt uses a fresh session, because
  * another harness plugin keeps notices on screen until they are dismissed.
  */
-$exchangeMarkers = ['cURL error', 'Could not resolve', 'refused the token request', 'Connected to'];
+$exchangeMarkers = ['cURL error', 'Could not resolve', 'refused to issue an access token', 'Connected to'];
 $callbackRefuses = static function(array $issued) use ($manager, $password, $statePrefix, $run, $exchangeMarkers): bool {
     [$http] = client($manager->username, $password);
     $state = craft\helpers\StringHelper::UUID();

@@ -343,7 +343,7 @@ class Auth extends Component
                 Plugin::getInstance()->getAlerts()->noteAuthFailure(Craft::t('vismaz', 'Visma refused to renew the connection ({reason}).', ['reason' => $reason]));
             }
 
-            throw new Exception(Craft::t('vismaz', 'Visma refused the token request: {reason}', ['reason' => $reason]));
+            throw new Exception(Craft::t('vismaz', 'Visma refused to issue an access token ({reason}).', ['reason' => $reason]));
         }
 
         return $body;
